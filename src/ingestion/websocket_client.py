@@ -5,3 +5,6 @@
 # - Subscribe to depth streams
 # - Handle reconnection
 # - Handle rate limit: https://docs.binance.us/#rate-limits-websocket (5/second)
+
+from src.config import settings
+

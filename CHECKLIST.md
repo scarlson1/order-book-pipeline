@@ -14,39 +14,39 @@ Use this checklist to track your progress implementing the Order Book Monitor.
 
 ### Configuration Management
 
-- [ ] `src/config.py`
-  - [ ] Load environment variables using Pydantic Settings
-  - [ ] Parse SYMBOLS env var into list
-  - [ ] Add validation for required settings
-  - [ ] Export settings singleton
+- [x] `src/config.py`
+  - [x] Load environment variables using Pydantic Settings
+  - [x] Parse SYMBOLS env var into list
+  - [x] Add validation for required settings
+  - [x] Export settings singleton
 
 ### Data Models
 
-- [ ] `src/common/models.py`
-  - [ ] `OrderBookLevel` - Single price level (price, volume)
-  - [ ] `OrderBookSnapshot` - Complete order book state
-    - [ ] timestamp
-    - [ ] symbol
-    - [ ] bids (list of levels)
-    - [ ] asks (list of levels)
-    - [ ] update_id
-  - [ ] `OrderBookMetrics` - Calculated metrics
-    - [ ] All metric fields (imbalance, spread, etc.)
-    - [ ] Validation rules
-  - [ ] `Alert` - Alert object
-    - [ ] alert_type, severity, message
-    - [ ] metric_value, threshold_value
-    - [ ] timestamp, symbol
-  - [ ] `AlertType` - Enum for alert types
-  - [ ] `Severity` - Enum for severity levels
+- [x] `src/common/models.py`
+  - [x] `OrderBookLevel` - Single price level (price, volume)
+  - [x] `OrderBookSnapshot` - Complete order book state
+    - [x] timestamp
+    - [x] symbol
+    - [x] bids (list of levels)
+    - [x] asks (list of levels)
+    - [x] update_id
+  - [x] `OrderBookMetrics` - Calculated metrics
+    - [x] All metric fields (imbalance, spread, etc.)
+    - [x] Validation rules
+  - [x] `Alert` - Alert object
+    - [x] alert_type, severity, message
+    - [x] metric_value, threshold_value
+    - [x] timestamp, symbol
+  - [x] `AlertType` - Enum for alert types
+  - [x] `Severity` - Enum for severity levels
 
 ### Testing
 
-- [ ] `tests/unit/test_models.py`
-  - [ ] Test OrderBookSnapshot validation
-  - [ ] Test OrderBookMetrics validation
-  - [ ] Test Alert creation
-  - [ ] Test edge cases
+- [x] `tests/unit/test_models.py`
+  - [x] Test OrderBookSnapshot validation
+  - [x] Test OrderBookMetrics validation
+  - [x] Test Alert creation
+  - [x] Test edge cases
 
 ## Phase 2: Database & Cache Clients
 
@@ -479,9 +479,7 @@ Use this checklist to track your progress implementing the Order Book Monitor.
 
 -
 -
--
-
----
+- ***
 
 ## Tips
 

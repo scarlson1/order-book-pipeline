@@ -66,3 +66,5 @@ htmlcov/
 
 # Pytest
 .pytest_cache/
+
+CHECKLIST.md

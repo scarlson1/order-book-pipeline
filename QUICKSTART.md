@@ -27,11 +27,12 @@ Open http://localhost:8501
 
 ## What's Running?
 
-| Service     | Port | Purpose              |
-| ----------- | ---- | -------------------- |
-| TimescaleDB | 5432 | Time-series database |
-| Redis       | 6379 | Real-time cache      |
-| Streamlit   | 8501 | Dashboard UI         |
+| Service     | Port | Purpose                 |
+| ----------- | ---- | ----------------------- |
+| TimescaleDB | 5432 | Time-series database    |
+| Redis       | 6379 | Real-time cache         |
+| Streamlit   | 8501 | Dashboard UI            |
+| Grafana     | 3000 | (optional) Dashboard UI |
 
 ## Common Commands
 
@@ -60,11 +61,14 @@ docker-compose ps
 ```bash
 make up          # Start services
 make down        # Stop services
+make up-grafana  # Start with profile
 make logs        # Follow logs
 make status      # Check status
 make db-shell    # Database shell
 make redis-shell # Redis shell
 make help        # See all commands
+make clean       # remove containers & volumes
+make test        # run tests locally
 ```
 
 ## Optional Services
@@ -77,17 +81,19 @@ docker-compose --profile with-grafana up -d
 
 Access at http://localhost:3000 (admin/admin)
 
-<!-- ### Start with pgAdmin
+### Start with pgAdmin
+
 ```bash
 docker-compose --profile with-pgadmin up -d
 ```
-Access at http://localhost:5050 (admin@orderbook.com/admin) -->
 
-### Start with Kafka
+Access at http://localhost:5050 (admin@orderbook.com/admin)
+
+<!-- ### Start with Kafka
 
 ```bash
-docker-compose --profile with-kafka up -d
-```
+docker-compose --profile with-redpanda up -d
+``` -->
 
 ## Next Steps: Implementation
 
@@ -171,7 +177,7 @@ docker system df
 3. Check database: `make db-shell`
 4. Review README.md for detailed docs
 
-## What You Get
+## Done / TODO
 
 ✅ Complete infrastructure setup
 ✅ Database schema ready
@@ -184,20 +190,18 @@ docker system df
 ❌ Dashboard components (to be implemented)
 ❌ Alert logic (to be implemented)
 
-The hard infrastructure work is done - now focus on the business logic!
-
 ## Resources
 
 - `README.md` - Full documentation
-- `PROJECT_STRUCTURE.md` - Implementation guide
-- `Makefile` - Common commands
-- `init-db.sql` - Database schema
-- `.env.example` - Configuration options
-- `pyproject.toml` - Python project configuration (uv compatible)
+- [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) - Implementation guide
+- [`Makefile`](Makefile) - Common commands
+- [`init-db.sql`](init-db.sql) - Database schema
+- [`.env.example`](.env.example) - Configuration options
+- [`pyproject.toml`](pyproject.toml) - Python project configuration (uv compatible)
 
 ## Local Development (Without Docker)
 
-Want to develop locally? Use uv for lightning-fast setup:
+Want to develop locally? Install [`uv`](https://docs.astral.sh/uv/) if you don't already have it:
 
 ```bash
 # Install uv
@@ -217,7 +221,5 @@ pytest
 
 # Start coding!
 ```
-
-**Why uv?** It's 10-100x faster than pip and makes dependency management a breeze!
 
 Happy coding! 🎉
