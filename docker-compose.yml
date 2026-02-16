@@ -1,0 +1,210 @@
+version: '3.8'
+
+services:
+  # TimescaleDB for time-series storage
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: orderbook_timescaledb
+    environment:
+      POSTGRES_DB: orderbook
+      POSTGRES_USER: orderbook_user
+      POSTGRES_PASSWORD: orderbook_pass
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - '5432:5432'
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U orderbook_user -d orderbook']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - orderbook_network
+
+  # Redis for caching and real-time state
+  redis:
+    image: redis:7-alpine
+    container_name: orderbook_redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - orderbook_network
+
+  # Redpanda (optional - Kafka-compatible streaming platform)
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v23.3.3
+    container_name: orderbook_redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      - --smp 1
+      - --memory 1G
+      - --mode dev-container
+      - --default-log-level=info
+    ports:
+      - '18081:18081' # Schema Registry
+      - '18082:18082' # Pandaproxy (REST API)
+      - '19092:19092' # Kafka API
+      - '19644:9644' # Admin API
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - orderbook_network
+    profiles:
+      - with-redpanda
+    healthcheck:
+      test:
+        ['CMD-SHELL', "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # Redpanda Console (optional - Web UI for Redpanda)
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v2.4.3
+    container_name: orderbook_redpanda_console
+    depends_on:
+      - redpanda
+    ports:
+      - '8080:8080'
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_SCHEMAREGISTRY_ENABLED: 'true'
+      KAFKA_SCHEMAREGISTRY_URLS: http://redpanda:8081
+    networks:
+      - orderbook_network
+    profiles:
+      - with-redpanda
+
+  # Data ingestion service
+  ingestion:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingestion
+    container_name: orderbook_ingestion
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: timescaledb
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: orderbook
+      POSTGRES_USER: orderbook_user
+      POSTGRES_PASSWORD: orderbook_pass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDPANDA_ENABLED: 'false'
+      REDPANDA_BOOTSTRAP_SERVERS: redpanda:9092
+      # Binance WebSocket settings
+      SYMBOLS: BTCUSDT,ETHUSDT,SOLUSDT
+      DEPTH_LEVELS: 20
+      UPDATE_SPEED: 100ms
+      # Metric calculation settings
+      CALCULATE_DEPTH: 10
+      ALERT_THRESHOLD: 0.7
+    volumes:
+      - ./src:/app/src
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - orderbook_network
+
+  # Streamlit dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: orderbook_dashboard
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - '8501:8501'
+    environment:
+      POSTGRES_HOST: timescaledb
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: orderbook
+      POSTGRES_USER: orderbook_user
+      POSTGRES_PASSWORD: orderbook_pass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - ./dashboard:/app/dashboard
+      - ./src:/app/src
+    restart: unless-stopped
+    networks:
+      - orderbook_network
+    # profiles:
+    #   - with-streamlit
+
+  # Grafana (optional - for advanced visualization)
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: orderbook_grafana
+    depends_on:
+      - timescaledb
+    ports:
+      - '3000:3000'
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - orderbook_network
+    profiles:
+      - with-grafana
+
+  # Using DataGrip instead
+  # pgAdmin (optional - for database management)
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   container_name: orderbook_pgadmin
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@orderbook.com
+  #     PGADMIN_DEFAULT_PASSWORD: admin
+  #     PGADMIN_CONFIG_SERVER_MODE: 'False'
+  #   ports:
+  #     - '5050:80'
+  #   volumes:
+  #     - pgadmin_data:/var/lib/pgadmin
+  #   networks:
+  #     - orderbook_network
+  #   profiles:
+  #     - with-pgadmin
+
+networks:
+  orderbook_network:
+    driver: bridge
+
+volumes:
+  timescale_data:
+  redis_data:
+  redpanda_data:
+  grafana_data:
+  pgadmin_data:

@@ -1,0 +1,32 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install dependencies with uv (much faster!)
+RUN uv pip install --system --no-cache -r requirements.txt
+
+# Copy source code
+COPY src/ ./src/
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+# Set Python path
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Run the ingestion service
+CMD ["python", "src/ingestion/main.py"]
