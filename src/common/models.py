@@ -4,13 +4,9 @@ from typing import List, Tuple, Optional
 from datetime import datetime
 from enum import Enum
 
-# TODO: Define all data models
-# - OrderBookSnapshot
-# - OrderBookMetrics
-# - Alert
+# ===== ENUMS =====
 
 # Reference: https://docs.pydantic.dev/latest/concepts/types/#enums
-# ===== ENUMS =====
 
 class AlertType(str, Enum):
     EXTREME_IMBALANCE = 'EXTREME_IMBALANCE'
