@@ -52,27 +52,27 @@ Use this checklist to track your progress implementing the Order Book Monitor.
 
 ### Database Client
 
-- [ ] `src/common/database.py`
-  - [ ] Create async connection pool (asyncpg)
-  - [ ] `insert_metrics()` - Insert metrics (with batching)
-  - [ ] `insert_alert()` - Insert alert
-  - [ ] `fetch_recent_metrics()` - Query recent metrics
-  - [ ] `fetch_time_series()` - Query time series data
-  - [ ] `fetch_alerts()` - Query alerts
-  - [ ] `get_statistics()` - Get historical stats for a symbol
-  - [ ] Connection health check
-  - [ ] Retry logic for failures
-  - [ ] Proper connection cleanup
+- [x] `src/common/database.py`
+  - [x] Create async connection pool (asyncpg)
+  - [x] `insert_metrics()` - Insert metrics (with batching)
+  - [x] `insert_alert()` - Insert alert
+  - [x] `fetch_recent_metrics()` - Query recent metrics
+  - [x] `fetch_time_series()` - Query time series data
+  - [x] `fetch_alerts()` - Query alerts
+  - [x] `get_statistics()` - Get historical stats for a symbol
+  - [x] Connection health check
+  - [x] Retry logic for failures
+  - [x] Proper connection cleanup
 
 ### Redis Client
 
 - [ ] `src/common/redis_client.py`
-  - [ ] Connection management with connection pool
-  - [ ] `cache_metrics()` - Cache latest metrics with TTL
-  - [ ] `get_cached_metrics()` - Retrieve cached metrics
-  - [ ] `cache_orderbook()` - Cache raw order book
-  - [ ] Key naming convention (e.g., `orderbook:{symbol}:latest`)
-  - [ ] Handle connection failures gracefully
+  - [x] Connection management with connection pool
+  - [x] `cache_metrics()` - Cache latest metrics with TTL
+  - [x] `get_cached_metrics()` - Retrieve cached metrics
+  - [x] `cache_orderbook()` - Cache raw order book
+  - [x] Key naming convention (e.g., `orderbook:{symbol}:latest`)
+  - [x] Handle connection failures gracefully
   - [ ] Batch operations for multiple symbols
 
 ### Testing

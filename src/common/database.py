@@ -11,11 +11,10 @@ from src.config import settings
 from src.common.models import Alert, OrderBookMetrics
 
 # TODO: Implement database client
-# - Connection pooling
-# - Query methods
+# - retry logic on failures
 # - Error handling
 
-class DatabaseClient():
+class DatabaseClient:
     """Async PostgreSQL/TimescaleDB client.
     
     Uses connection pooling for efficient database access.
@@ -71,6 +70,7 @@ class DatabaseClient():
         if self.pool:
             await self.pool.close()
             logger.info('Database connection pool closed')
+            self.pool = None
 
     async def insert_metrics(self, metrics: Dict) -> None:
         """Insert order book metrics.
@@ -163,7 +163,7 @@ class DatabaseClient():
             """, symbol, limit)
 
             # return [dict(row) for row in rows]
-            [Alert.model_validate(dict(row)) for row in rows]
+            return [Alert.model_validate(dict(row)) for row in rows]
 
     async def fetch_time_series(
         self,
@@ -260,3 +260,19 @@ class DatabaseClient():
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
             return False
+
+    async def get_pool_stats(self) -> Dict:
+        """Get connection pool statistics.
+        
+        Returns:
+            Dictionary with pool stats
+        """
+        if not self.pool:
+            return {"status": "not_connected"}
+        
+        return {
+            "size": self.pool.get_size(),
+            "free": self.pool.get_idle_size(),
+            "max_size": self.pool.get_max_size(),
+            "min_size": self.pool.get_min_size(),
+        }
