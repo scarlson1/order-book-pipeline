@@ -5,25 +5,23 @@ A production-ready streaming data pipeline that monitors order book imbalances i
 ## Architecture
 
 ```
-Binance WebSocket → Ingestion Service → TimescaleDB
-                           ↓              ↓
-                         Redis      Streamlit Dashboard
-                                         ↓
-                                    Grafana (optional)
+Binance WebSocket → Ingestion Service → Redpanda (Kafka-compatible)
+                           ↓                    ↓
+                         Redis            TimescaleDB
+                           ↓                    ↓
+                    Streamlit Dashboard ← Grafana (optional)
 ```
-
-**Optional:** Add Redpanda for production-grade message streaming
 
 ## Features
 
 - **Real-time streaming** from Binance WebSocket API
+- **Redpanda streaming platform** - Kafka-compatible message broker for scalable data pipelines
 - **Multiple metrics**: Imbalance ratio, weighted imbalance, spread analysis, VTOB ratio
 - **Intelligent alerts**: Extreme imbalance, imbalance flips, spread widening
 - **Time-series storage** with TimescaleDB for historical analysis
 - **Redis caching** for ultra-low latency reads
 - **Interactive dashboard** with Streamlit
-- **Optional Redpanda** support for production deployments (Kafka-compatible, simpler, faster)
-- **Grafana integration** for advanced visualization
+- **Grafana integration** for advanced visualization (optional)
 
 ## Quick Start
 
@@ -93,38 +91,51 @@ Open your browser to:
 ### 6. Optional Services
 
 ```bash
+# Start with Redpanda (recommended for production-grade streaming)
+docker-compose --profile with-redpanda up -d
+
 # Start with Grafana
 docker-compose --profile with-grafana up -d
 
-# Start with Redpanda (Kafka-compatible streaming)
-docker-compose --profile with-redpanda up -d
-
 # Start with pgAdmin (database management)
 docker-compose --profile with-pgadmin up -d
+
+# Start everything
+docker-compose --profile with-redpanda --profile with-grafana --profile with-pgadmin up -d
 ```
 
 Access optional services:
 
-- **Grafana**: http://localhost:3000 (admin/admin)
 - **Redpanda Console**: http://localhost:8080 (when with-redpanda profile is enabled)
+- **Grafana**: http://localhost:3000 (admin/admin)
 - **pgAdmin**: http://localhost:5050 (admin@orderbook.com/admin)
+
+**Note:** While Redpanda is optional for initial setup, it's highly recommended for production deployments to enable scalable, distributed data processing.
 
 ## Docker Compose Profiles
 
 The docker-compose.yml uses profiles to optionally enable additional services:
 
 - **Default** (no profile): Core services only (TimescaleDB, Redis, Ingestion, Dashboard)
-- **with-redpanda**: Adds Redpanda (Kafka-compatible) and Redpanda Console for message streaming
+- **with-redpanda**: Adds Redpanda (Kafka-compatible) and Redpanda Console for message streaming ⭐ **Recommended for production**
 - **with-grafana**: Adds Grafana for advanced visualization
 - **with-pgadmin**: Adds pgAdmin for database management
 
-**Why Redpanda over Kafka?**
+**Why Redpanda?**
 
-- Simpler: No Zookeeper needed
-- Faster: Written in C++ for better performance
-- Lighter: Uses less memory and CPU
-- Compatible: Drop-in Kafka replacement
-- Better DX: Built-in web console
+- **Simpler**: No Zookeeper needed - single binary deployment
+- **Faster**: Written in C++ for 10x better performance vs Kafka
+- **Lighter**: Uses less memory and CPU (~1GB vs ~4GB for Kafka+Zookeeper)
+- **Compatible**: Drop-in Kafka replacement - use existing Kafka clients
+- **Better DX**: Built-in web console and rpk CLI tool
+- **Production-ready**: Powers real-time data pipelines at scale
+
+**Use Cases:**
+
+- Enable multiple consumers (dashboard, alerts, analytics)
+- Replay historical events for debugging
+- Scale horizontally with partitioning
+- Decouple ingestion from processing
 
 ## Configuration
 

@@ -6,16 +6,13 @@ pydantic-settings==2.1.0
 # WebSocket and async
 websockets==12.0
 aiohttp==3.9.1
-asyncio==3.4.3
 
-# Database
-psycopg2-binary==2.9.9
+# Database - pure Python, no compilation needed
 sqlalchemy==2.0.23
 asyncpg==0.29.0
 
-# Redis
+# Redis - pure Python (without hiredis for no compilation)
 redis==5.0.1
-hiredis==2.2.3
 
 # Redpanda/Kafka client (optional)
 kafka-python-ng==2.2.2

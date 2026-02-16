@@ -5,7 +5,7 @@ description = "Real-time order book imbalance monitor for cryptocurrency trading
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Spencer Carlson", email = "08.writing.chime@icloud.com"}
 ]
 keywords = ["trading", "orderbook", "crypto", "real-time", "data-engineering"]
 classifiers = [
