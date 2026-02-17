@@ -7,7 +7,7 @@ from loguru import logger
 
 from src.config import settings
 
-class RedPandaProducer:
+class RedpandaProducer:
     """Async Redpanda/Kafka producer for publishing messages.
     
     Uses kafka-python-ng KafkaProducer under the hood but provides
@@ -131,7 +131,7 @@ class RedPandaProducer:
                 kafka_headers = [(k, v.endcode('utf-8')) for k, v in headers.items()]
             
             # KafkaProducer.send() is synchronous but non-blocking
-            # It returns a FutureRecordMetadata immediately
+            # returns a FutureRecordMetadata immediately
             future = asyncio.to_thread(
                 lambda: self.producer.send(
                     topic=topic,
@@ -262,47 +262,302 @@ class RedPandaProducer:
         await self.close()
         return False
 
-class RedPandaConsumer:
-
-    def __init__(self, topic: str, group_id: str, auto_offset_reset: Optional[str] = 'latest') -> None:
+class RedpandaConsumer:
+    """Async Redpanda/Kafka consumer for consuming messages.
+    
+    Uses kafka-python-ng KafkaConsumer under the hood but provides
+    async interface via async generator.
+    
+    Features:
+    - JSON deserialization
+    - Consumer group management
+    - Automatic offset tracking
+    - Configurable commit strategy
+    
+    Example:
+        >>> async with RedpandaConsumer(
+        ...     topics=['orderbook.metrics'],
+        ...     group_id='db-writer'
+        ... ) as consumer:
+        ...     async for message in consumer.consume():
+        ...         print(f"{message.key}: {message.value}")
+    
+    Documentation:
+    - KafkaConsumer: https://kafka-python.readthedocs.io/en/master/apidoc/KafkaConsumer.html
+    """
+    def __init__(self, topics: List[str], group_id: str, auto_commit: bool = True, auto_offset_reset: Optional[str] = 'latest') -> None:
+        """Initialize Redpanda consumer.
+        
+        Args:
+            topics: List of topics to consume from
+            group_id: Consumer group ID (shared processing across group)
+            auto_commit: Auto-commit offsets (default: True)
+            auto_offset_reset: Where to start if no offset ('earliest' or 'latest')
         """
-        Initializes the Redpanda Consumer.
+        self.topics = topics
+        self.group_id = group_id
+        self.auto_commit = auto_commit
+        self.auto_offset_reset = auto_offset_reset
+        
+        self.consumer: Optional[KafkaConsumer] = None
+        self._closed = False
+        self._messages_consumed = 0
+        # self.consumer = KafkaConsumer(
+        #     topic,
+        #     bootstrap_servers=settings.redpanda_bootstrap_servers,
+        #     group_id=group_id,
+        #     auto_offset_reset=auto_offset_reset,
+        #     value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+        # )
+        # print(f'Consumer initialized for topic: {topic}') # , group: {group_id}
 
-        :param topic_name: The topic to subscribe to.
-        :param bootstrap_servers: The Redpanda broker addresses (e.g., 'localhost:9092').
-        :param group_id: The consumer group ID. Multiple consumers share work
-        :param auto_offset_reset: Where to start consuming ('earliest' or 'latest').
-        """
-        self.consumer = KafkaConsumer(
-            topic,
-            bootstrap_servers=settings.redpanda_bootstrap_servers,
-            group_id=group_id,
-            auto_offset_reset=auto_offset_reset,
-            value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+
+    def connect(self) -> None:
+        
+        if self.consumer is not None:
+            return
+        
+        logger.info(
+            f'Connecting consumer `{self.group_id}` to Redpanda'
+            f'topics: {self.topics}'
         )
-        print(f'Consumer initialized for topic: {topic}') # , group: {group_id}
-
-
-    def connect(self):
-        pass
-
-    def close(self):
-        pass
-
-    async def consume(self):
         try:
-            for msg in self.consumer:
-                # message is a ConsumerRecord (topic, partition, offset, key, value, ...)
-                print(f'TODO: handle message in consumer class {msg.value}')
-                yield msg.value
+            self.consumer = asyncio.to_thread(
+                lambda: KafkaConsumer(
+                    *self.topics,
+                    bootstrap_servers=settings.redpanda_bootstrap_servers,
+
+                    # consumer group settings
+                    group_id=self.group_id,
+                    auto_offset_reset=self.auto_offset_reset, # 'earliest' or 'latest'
+                    enable_auto_commit=self.auto_commit,
+                    auto_commit_interval_ms=500, # Commit every 5 seconds
+
+                    # deserialization
+                    value_deserializer=lambda v: json.loads(v.decode('utf-8')) if v else None,
+                    key_deserializer=lambda k: k.decode('utf-8') if k else None,
+
+                    #fetch settings
+                    fetch_min_bytes=1,      # Return immediately if any data
+                    fetch_max_wait_ms=500,  # Wait max 500ms for min_bytes
+                    max_partition_fetch_bytes= 1048576,  # 1MB per partition
+
+                    # session settings
+                    session_timeout_ms=30000,    # 30s session timeout
+                    heartbeat_interval_ms=3000,  # Send heartbeat every 3s
+
+                    # processing settings
+                    max_poll_records=500,        # Process up to 500 messages per poll
+                    max_poll_interval_ms=300000, # 5 minute max between polls
+                )
+            )
+
+            logger.info(
+                f"✓ Consumer '{self.group_id}' connected to topics: {self.topics}"
+            )
+            self._closed = False
+        
+        except Exception as e:
+            logger.error(f'Failed to connect consumer: {e}')
+            raise
+
+    async def consume(self, timeout_ms: int = 1000) -> AsyncGenerator[Any, None]:
+        """Consume messages as an async generator.
+        
+        Args:
+            timeout_ms: Poll timeout in milliseconds
+            
+        Yields:
+            ConsumerRecord objects with .key, .value, .topic, .partition, .offset
+            
+        Reference: https://kafka-python.readthedocs.io/en/master/apidoc/KafkaConsumer.html#kafka.KafkaConsumer.poll
+        
+        Example:
+            >>> async for message in consumer.consume():
+            ...     print(f"Received from {message.topic}: {message.value}")
+            ...     # message.key      - message key (string)
+            ...     # message.value    - message value (dict)
+            ...     # message.topic    - topic name
+            ...     # message.partition - partition number
+            ...     # message.offset   - message offset
+        """
+        if not self.consumer or self._closed:
+            logger.error('Redpanda consumer not connected')
+            return
+
+        try:
+            # poll for messages without blocking event loop
+            message_batch = await asyncio.to_thread(
+                lambda: self.consumer.poll(timeout_ms=timeout_ms)
+            )
+            # message_batch is dict: {TopicPartition: [messages]}
+            for topic_partition, msgs in message_batch.items():
+                for msg in msgs:
+                    self._messages_consumed += 1
+                    yield msg
+
+            if not message_batch:
+                await asyncio.sleep(0.01)
+
         except KeyboardInterrupt:
             print("Consumption stopped by user.")
+        except Exception as e:
+            logger.error(f"Error consuming messages: {e}")
+            raise
         finally:
             self.consumer.close()
             print("Consumer closed.")
 
-    def __aenter__(self):
-        pass
+    async def commit(self) -> None:
+        """Manually commit current offsets.
+        
+        Only needed if auto_commit=False.
+        
+        Reference: https://kafka-python.readthedocs.io/en/master/apidoc/KafkaConsumer.html#kafka.KafkaConsumer.commit
+        """
+        if not self.consumer or self._closed:
+            return
+        
+        try:
+            await asyncio.to_thread(self.consumer.commit)
+            logger.debug('committed offsets')
 
-    def __aexit__(self):
-        pass
+        except Exception as e:
+            logger.error(f'Error committing offsets: {e}')
+
+    async def close(self) -> None:
+        """Close consumer gracefully.
+        
+        Commits offsets (if auto_commit=False) then closes connection.
+        """
+        if self._closed:
+            logger.debug('Redpanda consumer already closed')
+            return
+
+        if self.consumer:
+            try:
+                if not self.auto_commit:
+                    await self.commit()
+
+                await asyncio.to_thread(self.consumer.close)
+
+                logger.info(
+                    f'Redpanda consumer closed `{self.group_id}` ',
+                    f'Consumed: {self._messages_consumed} messages'
+                )
+            
+            except Exception as e:
+                logger.error(f'Error closing Redpanda consumer: {e}')
+            finally:
+                self.consumer = None
+                self._closed = True
+
+    def get_stats(self) -> Dict[str, int]:
+        """Get consumer statistics.
+        
+        Returns:
+            Dict with consumed message count
+        """
+        return {
+            'messages_consumed': self._messages_consumed,
+        }
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.connect()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
+        return False
+
+#############################
+# ===== USAGE EXAMPLE ===== #
+#############################
+
+# async def example_producer():
+#     """Example: Publishing messages to Redpanda."""
+    
+#     async with RedpandaProducer() as producer:
+#         # Publish single message
+#         await producer.publish(
+#             topic='orderbook.raw',
+#             key='BTCUSDT',
+#             value={
+#                 'symbol': 'BTCUSDT',
+#                 'timestamp': '2024-01-01T00:00:00Z',
+#                 'bids': [[50000.0, 1.5], [49999.0, 2.0]],
+#                 'asks': [[50001.0, 1.2], [50002.0, 1.8]]
+#             }
+#         )
+        
+#         # Publish batch
+#         messages = [
+#             {'symbol': 'BTCUSDT', 'price': 50000},
+#             {'symbol': 'ETHUSDT', 'price': 3000},
+#             {'symbol': 'SOLUSDT', 'price': 100}
+#         ]
+#         count = await producer.publish_batch('orderbook.raw', messages)
+#         logger.info(f"Published {count} messages")
+        
+#         # Check stats
+#         stats = producer.get_stats()
+#         logger.info(f"Stats: {stats}")
+
+
+# async def example_consumer():
+#     """Example: Consuming messages from Redpanda."""
+    
+#     async with RedpandaConsumer(
+#         topics=['orderbook.metrics'],
+#         group_id='example-consumer',
+#         auto_offset_reset='latest'
+#     ) as consumer:
+        
+#         # Consume messages
+#         async for message in consumer.consume():
+#             logger.info(
+#                 f"Received: {message.key} from "
+#                 f"{message.topic}:{message.partition}:{message.offset}"
+#             )
+#             logger.info(f"Value: {message.value}")
+            
+#             # Process message here...
+            
+#             # Break after 10 messages for demo
+#             if consumer.get_stats()['messages_consumed'] >= 10:
+#                 break
+
+
+# async def example_manual_commit():
+#     """Example: Manual offset commit for exactly-once processing."""
+    
+#     async with RedpandaConsumer(
+#         topics=['orderbook.metrics'],
+#         group_id='db-writer',
+#         auto_commit=False  # Manual commit
+#     ) as consumer:
+        
+#         batch = []
+        
+#         async for message in consumer.consume():
+#             batch.append(message.value)
+            
+#             # Process in batches of 100
+#             if len(batch) >= 100:
+#                 # Write to database
+#                 # await db.insert_batch(batch)
+                
+#                 # Commit offset AFTER successful write
+#                 await consumer.commit()
+                
+#                 logger.info(f"Processed and committed batch of {len(batch)}")
+#                 batch = []
+
+# if __name__ == "__main__":
+#     # Run producer example
+#     asyncio.run(example_producer())
+    
+#     # Run consumer example
+#     # asyncio.run(example_consumer())
