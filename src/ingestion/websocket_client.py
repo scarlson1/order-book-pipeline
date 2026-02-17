@@ -30,6 +30,8 @@ import json
 from loguru import logger
 from src.config import settings
 
+# TODO: need to handle ping/pong (or send unsolicited pongs every x seconds) ??
+
 # Rate limit docs: https://docs.binance.us/?python#general-information-on-rate-limits
 # exchange information (status of symbols): https://docs.binance.us/?python#exchange-information-websocket
 # market data requests: https://docs.binance.us/?python#market-data-requests
@@ -211,7 +213,6 @@ class BinanceWebSocketClient:
 
                 retry_delay = min(retry_delay * 2, self._max_retry_delay)
 
-    
     async def start(self) -> None:
         """Start WebSocket connections for all configured symbols.
         

@@ -133,7 +133,7 @@ class RedpandaProducer:
             future = await asyncio.to_thread(
                 lambda: self.producer.send(
                     topic=topic,
-                    key=key,
+                    key=key,        # ← Partition by symbol
                     value=value,
                     headers=kafka_headers
                 )

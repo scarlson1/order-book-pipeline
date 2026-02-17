@@ -29,6 +29,7 @@ from loguru import logger
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 
+from src.common.redpanda_client import RedpandaProducer
 from src.config import settings
 from src.ingestion.websocket_client import BinanceWebSocketClient
 from src.ingestion.orderbook_parser import OrderBookParser
@@ -54,54 +55,54 @@ class IngestionService:
         >>> await service.start()
     """
     
-    def __init__(self):
+    def __init__(self, producer: RedpandaProducer | None = None):
         """Initialize ingestion service."""
         self.parser = OrderBookParser()
-        self.producer: KafkaProducer | None = None
+        self.producer: producer or RedpandaProducer() # KafkaProducer | None = None
+        self.ws_client: BinanceWebSocketClient | None = None
         self._running = False
         self._shutdown_event = asyncio.Event()
-        self.ws_client: BinanceWebSocketClient | None = None
         
         # Stats for monitoring
         self._messages_published = 0
         self._messages_failed = 0
     
-    def _create_producer(self) -> KafkaProducer:
-        """Create Redpanda/Kafka producer.
+    # def _create_producer(self) -> KafkaProducer:
+    #     """Create Redpanda/Kafka producer.
         
-        Reference: https://kafka-python.readthedocs.io/en/master/apidoc/KafkaProducer.html
+    #     Reference: https://kafka-python.readthedocs.io/en/master/apidoc/KafkaProducer.html
         
-        Returns:
-            Configured KafkaProducer instance
-        """
-        logger.info(f"Connecting to Redpanda at {settings.redpanda_bootstrap_servers}")
+    #     Returns:
+    #         Configured KafkaProducer instance
+    #     """
+    #     logger.info(f"Connecting to Redpanda at {settings.redpanda_bootstrap_servers}")
         
-        producer = KafkaProducer(
-            bootstrap_servers=settings.redpanda_bootstrap_servers,
+    #     producer = KafkaProducer(
+    #         bootstrap_servers=settings.redpanda_bootstrap_servers,
             
-            # Serialize values as JSON bytes
-            value_serializer=lambda v: json.dumps(v, default=str).encode('utf-8'),
+    #         # Serialize values as JSON bytes
+    #         value_serializer=lambda v: json.dumps(v, default=str).encode('utf-8'),
             
-            # Serialize keys as UTF-8 bytes (we key by symbol for partitioning)
-            key_serializer=lambda k: k.encode('utf-8') if k else None,
+    #         # Serialize keys as UTF-8 bytes (we key by symbol for partitioning)
+    #         key_serializer=lambda k: k.encode('utf-8') if k else None,
             
-            # Reliability settings
-            acks='all',              # Wait for all replicas to acknowledge
-            retries=3,               # Retry failed sends
-            retry_backoff_ms=300,    # Wait 300ms between retries
+    #         # Reliability settings
+    #         acks='all',              # Wait for all replicas to acknowledge
+    #         retries=3,               # Retry failed sends
+    #         retry_backoff_ms=300,    # Wait 300ms between retries
             
-            # Performance settings
-            linger_ms=5,             # Batch messages for 5ms for efficiency
-            # batch_size=16384,        # 16KB batch size
-            # compression_type='gzip', # Compress messages
+    #         # Performance settings
+    #         linger_ms=5,             # Batch messages for 5ms for efficiency
+    #         # batch_size=16384,        # 16KB batch size
+    #         # compression_type='gzip', # Compress messages
             
-            # Timeout settings
-            request_timeout_ms=30000,
-            max_block_ms=10000,      # Max time to block on send
-        )
+    #         # Timeout settings
+    #         request_timeout_ms=30000,
+    #         max_block_ms=10000,      # Max time to block on send
+    #     )
         
-        logger.info("✓ Connected to Redpanda")
-        return producer
+    #     logger.info("✓ Connected to Redpanda")
+    #     return producer
     
     async def _publish_to_redpanda(
         self,
@@ -121,36 +122,41 @@ class IngestionService:
             
         Reference: https://kafka-python.readthedocs.io/en/master/apidoc/KafkaProducer.html#kafka.KafkaProducer.send
         """
-        try:
-            # KafkaProducer.send() is synchronous but non-blocking
-            # We run it in executor to avoid blocking the async event loop
-            loop = asyncio.get_event_loop()
-            
-            future = await asyncio.to_thread(
-                lambda: self.producer.send(
-                    topic=topic,
-                    key=key,
-                    value=data
-                )
-            )
-            
-            # Optional: wait for acknowledgment
-            # record_metadata = future.get(timeout=10)
-            # logger.debug(f"Published to {topic}:{record_metadata.partition}:{record_metadata.offset}")
-            
+        ok = await self.producer.publish(topic=topic, key=key, value=data)
+        if ok:
             self._messages_published += 1
-            return True
+        else:
+            self._messages_failed += 1
+        return ok
+        # try:
+        #     # KafkaProducer.send() is synchronous but non-blocking
+        #     # We run it in executor to avoid blocking the async event loop
+        #     future = await asyncio.to_thread(
+        #         lambda: self.producer.send(
+        #             topic=topic,
+        #             key=key,
+        #             value=data
+        #         )
+        #     )
             
-        except KafkaError as e:
-            logger.error(f"Failed to publish to {topic}: {e}")
-            self._messages_failed += 1
-            return False
+        #     # Optional: wait for acknowledgment
+        #     # record_metadata = future.get(timeout=10)
+        #     # logger.debug(f"Published to {topic}:{record_metadata.partition}:{record_metadata.offset}")
+            
+        #     self._messages_published += 1
+        #     return True
+            
+        # except KafkaError as e:
+        #     logger.error(f"Failed to publish to {topic}: {e}")
+        #     self._messages_failed += 1
+        #     return False
         
-        except Exception as e:
-            logger.error(f"Unexpected error publishing to {topic}: {e}")
-            self._messages_failed += 1
-            return False
+        # except Exception as e:
+        #     logger.error(f"Unexpected error publishing to {topic}: {e}")
+        #     self._messages_failed += 1
+        #     return False
     
+    # old ?? save raw data and process orderbook in Flink ??
     async def handle_orderbook(self, symbol: str, raw_data: dict) -> None:
         """Handle raw order book message from WebSocket.
         
@@ -231,18 +237,17 @@ class IngestionService:
         logger.info("=" * 50)
         
         self._running = True
+        # Connect to Redpanda
+        await self.producer.connect()
+        # self.producer = self._create_producer()
         
-        # Step 1: Connect to Redpanda
-        self.producer = self._create_producer()
-        
-        # Step 2: Create WebSocket client with our callback
-        # The callback (handle_orderbook) is what connects the
-        # WebSocket client to the Redpanda publisher
+        # Create WebSocket client with our callback
+        # The callback (handle_orderbook) connects webSocket client to the Redpanda publisher (after cleaning/validating)
         self.ws_client = BinanceWebSocketClient(
             callback=self.handle_orderbook
         )
         
-        # Step 3: Run stats logging and WebSocket concurrently
+        # Run stats logging and WebSocket concurrently
         try:
             await asyncio.gather(
                 self.ws_client.start(),
@@ -271,17 +276,18 @@ class IngestionService:
         
         # Flush and close Redpanda producer
         if self.producer:
-            try:
-                # Flush ensures all buffered messages are sent
-                logger.info("Flushing Redpanda producer...")
-                await asyncio.to_thread(self.producer.flush)
+            await self.producer.close()
+            # try:
+            #     # Flush ensures all buffered messages are sent
+            #     logger.info("Flushing Redpanda producer...")
+            #     await asyncio.to_thread(self.producer.flush)
                 
-                # Close the producer
-                await asyncio.to_thread(self.producer.close)
-                logger.info("Redpanda producer closed")
+            #     # Close the producer
+            #     await asyncio.to_thread(self.producer.close)
+            #     logger.info("Redpanda producer closed")
                 
-            except Exception as e:
-                logger.error(f"Error closing Redpanda producer: {e}")
+            # except Exception as e:
+            #     logger.error(f"Error closing Redpanda producer: {e}")
         
         logger.info(
             f"Ingestion service stopped. "
