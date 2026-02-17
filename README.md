@@ -5,11 +5,24 @@ A production-ready streaming data pipeline that monitors order book imbalances i
 ## Architecture
 
 ```
-Binance WebSocket → Ingestion Service → Redpanda (Kafka-compatible)
-                           ↓                    ↓
-                         Redis            TimescaleDB
-                           ↓                    ↓
-                    Streamlit Dashboard ← Grafana (optional)
+Binance WebSocket
+      ↓
+Python Ingestion Service
+      ↓
+Redpanda (orderbook.raw)        ← Message broker / buffer
+      ↓
+Apache Flink                    ← Stream processing
+  ├── Windowed aggregations
+  ├── Metrics calculation
+  ├── Alert detection
+  └── Complex event patterns
+      ↓
+Redpanda (orderbook.processed / orderbook.alerts)
+      ↓
+  Consumers
+  ├── TimescaleDB               ← Persistent storage
+  ├── Redis                     ← Low-latency cache
+  └── Streamlit Dashboard       ← Visualization
 ```
 
 ## Features
@@ -116,8 +129,7 @@ Access optional services:
 
 The docker-compose.yml uses profiles to optionally enable additional services:
 
-- **Default** (no profile): Core services only (TimescaleDB, Redis, Ingestion, Dashboard)
-- **with-redpanda**: Adds Redpanda (Kafka-compatible) and Redpanda Console for message streaming ⭐ **Recommended for production**
+- **Default** (no profile): Core services only (TimescaleDB, Redis, Ingestion, RedPanda, Flink, Dashboard)
 - **with-grafana**: Adds Grafana for advanced visualization
 - **with-pgadmin**: Adds pgAdmin for database management
 
@@ -191,30 +203,19 @@ DEPTH_LEVELS=20     # Fetch 20 levels from exchange
 └── logs/                     # Application logs
 ```
 
-## Next Steps: Implementing the Code
-
-Now that the infrastructure is set up, you need to implement:
+## TODO:
 
 1. **Ingestion Service** (`src/ingestion/`)
-   - WebSocket client to connect to Binance
    - Order book parser
    - Metrics calculator
    - Database writer
    - Alert engine
 
-2. **Common Utilities** (`src/common/`)
-   - Database connection manager
-   - Redis client wrapper
-   - Data models (Pydantic)
-
-3. **Dashboard** (`dashboard/`)
+2. **Dashboard** (`dashboard/`)
    - Streamlit app with visualizations
    - Real-time metric display
    - Alert feed
    - Historical analysis
-
-4. **Configuration** (`src/`)
-   - Config loader from environment variables
 
 ## Useful Commands
 
@@ -309,7 +310,7 @@ docker-compose logs timescaledb
 docker-compose logs ingestion
 
 # Verify network connectivity
-docker-compose exec ingestion ping -c 3 stream.binance.com
+docker-compose exec ingestion ping -c 3 stream.binance.us
 ```
 
 ### Dashboard not loading
@@ -381,7 +382,7 @@ Before deploying to production:
 
 ## License
 
-MIT License - feel free to use for your portfolio or commercial projects.
+MIT License - feel free to use for your personal or commercial projects.
 
 ## Local Development with uv
 

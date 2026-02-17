@@ -1,11 +1,11 @@
-.PHONY: help up down restart logs build clean db-shell redis-shell test uv-install uv-sync
+.PHONY: help up down restart logs build clean db-shell redis-shell test uv-install uv-sync flink-ui flink-logs
 
 # Default target
 help:
 	@echo "Available commands:"
 	@echo ""
 	@echo "Docker commands:"
-	@echo "  make up              - Start all services"
+	@echo "  make up              - Start core services"
 	@echo "  make down            - Stop all services"
 	@echo "  make restart         - Restart all services"
 	@echo "  make logs            - Follow logs from all services"
@@ -18,6 +18,11 @@ help:
 	@echo "  make db-size         - Check database size"
 	@echo "  make table-sizes     - Check table sizes"
 	@echo ""
+	@echo "Flink commands:"
+	@echo "  make flink-ui        - Open Flink Web UI"
+	@echo "  make flink-logs      - View Flink logs"
+	@echo "  make flink-jobs      - List running Flink jobs"
+	@echo ""
 	@echo "Monitoring commands:"
 	@echo "  make status          - Check service status"
 	@echo "  make stats           - Monitor resource usage"
@@ -25,9 +30,9 @@ help:
 	@echo "  make recent-alerts   - View recent alerts"
 	@echo ""
 	@echo "Profile commands:"
-	@echo "  make up-kafka        - Start with Kafka"
+	@echo "  make up-streaming    - Start with Redpanda + Flink"
 	@echo "  make up-grafana      - Start with Grafana"
-	@echo "  make up-all          - Start all services including optional ones"
+	@echo "  make up-all          - Start all services"
 	@echo ""
 	@echo "Local development (uv):"
 	@echo "  make uv-install      - Install uv package manager"
@@ -40,9 +45,16 @@ up:
 	docker-compose up -d
 	@echo "Services starting... Dashboard will be available at http://localhost:8501"
 
-# Start with Kafka
-up-kafka:
-	docker-compose --profile with-kafka up -d
+# Start with Redpanda + Flink (core streaming stack)
+up-streaming:
+	docker-compose --profile with-redpanda up -d
+	@echo "Streaming stack starting..."
+	@echo "  Redpanda Console: http://localhost:8080"
+	@echo "  Flink Web UI:     http://localhost:8081"
+
+# Alias for streaming stack
+up-redpanda:
+	docker-compose --profile with-redpanda up -d
 
 # Start with Grafana
 up-grafana:
@@ -54,7 +66,17 @@ up-pgadmin:
 
 # Start everything
 up-all:
-	docker-compose --profile with-kafka --profile with-grafana --profile with-pgadmin up -d
+	docker-compose --profile with-redpanda --profile with-grafana --profile with-pgadmin up -d
+
+# Flink commands
+flink-ui:
+	open http://localhost:8081
+
+flink-logs:
+	docker-compose logs -f flink-jobmanager flink-taskmanager
+
+flink-jobs:
+	docker-compose exec flink-jobmanager flink list
 
 # Stop services
 down:

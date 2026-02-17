@@ -8,7 +8,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 from loguru import logger
 from src.config import settings
-from src.common.models import Alert, OrderBookMetrics
+from src.common.models import OrderBookMetrics
 
 # TODO: Implement database client
 # - retry logic on failures
@@ -27,7 +27,7 @@ class DatabaseClient:
     """
 
     def __init__(self):
-        self.pool = Optional[asyncpg.Pool] = None
+        self.pool: Optional[asyncpg.Pool] = None
 
     async def connect(self):
         """Create connection pool.
@@ -121,12 +121,12 @@ class DatabaseClient:
             alert: Dictionary with alert data
         """
         async with self.pool.acquire() as conn:
-            conn.execute("""
+            await conn.execute("""
                 INSERT INTO orderbook_alerts (
                     time, symbol, alert_type, severity, message,
                     metric_value, threshold_value, side,
                     mid_price, imbalance_ratio
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9 $10)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             """,
                 alert['timestamp'],
                 alert['symbol'],
@@ -140,7 +140,7 @@ class DatabaseClient:
                 alert.get('imbalance_ratio')
             )
 
-    async def fetch_recent_metrics(self, symbol: str, limit: int = 100) -> List[Alert]:
+    async def fetch_recent_metrics(self, symbol: str, limit: int = 100) -> List[Dict]:
         """Fetch recent metrics for a symbol.
         
         Args:
@@ -154,16 +154,14 @@ class DatabaseClient:
         """
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT time, symbol, mid_price, imbalance_ratio, 
+                SELECT time, symbol, mid_price, imbalance_ratio,
                        weighted_imbalance, spread_bps, bid_volume, ask_volume
                 FROM orderbook_metrics
                 WHERE symbol = $1
                 ORDER BY time DESC
                 LIMIT $2
             """, symbol, limit)
-
-            # return [dict(row) for row in rows]
-            return [Alert.model_validate(dict(row)) for row in rows]
+            return [dict(row) for row in rows]
 
     async def fetch_time_series(
         self,
@@ -247,8 +245,9 @@ class DatabaseClient:
                     COUNT(*) as sample_count
                 FROM orderbook_metrics
                 WHERE symbol = $1
-                    AND time >= NOW() - INTERVAL '$2 hours'
+                    AND time >= NOW() - ($2::text || ' hours')::interval
             """, symbol, hours)
+            # AND time >= NOW() - INTERVAL '$2 hours'
 
             return dict(stats) if stats else {}
 

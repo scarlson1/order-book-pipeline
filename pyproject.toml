@@ -108,6 +108,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration (require database, redis, etc.)",
+]
 addopts = [
     "-v",
     "--strict-markers",

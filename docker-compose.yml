@@ -127,6 +127,60 @@ services:
     networks:
       - orderbook_network
 
+    # Apache Flink JobManager - stream processing coordinator
+  flink-jobmanager:
+    image: flink:1.18-scala_2.12
+    container_name: orderbook_flink_jobmanager
+    command: jobmanager
+    ports:
+      - '8081:8081' # Flink Web UI
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        parallelism.default: 2
+        state.backend: rocksdb
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+        heartbeat.interval: 1000
+        heartbeat.timeout: 5000
+    volumes:
+      - flink_checkpoints:/opt/flink/checkpoints
+      - ./flink/jobs:/opt/flink/jobs # Mount your Flink jobs
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks:
+      - orderbook_network
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:8081/overview || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # profiles:
+    #   - with-redpanda
+
+  # Apache Flink TaskManager - stream processing worker
+  flink-taskmanager:
+    image: flink:1.18-scala_2.12
+    container_name: orderbook_flink_taskmanager
+    command: taskmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        parallelism.default: 2
+        state.backend: rocksdb
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+    volumes:
+      - flink_checkpoints:/opt/flink/checkpoints
+    depends_on:
+      - flink-jobmanager
+    networks:
+      - orderbook_network
+    # profiles:
+    #   - with-redpanda
+
   # Streamlit dashboard
   dashboard:
     build:
@@ -204,5 +258,6 @@ volumes:
   timescale_data:
   redis_data:
   redpanda_data:
+  flink_checkpoints:
   grafana_data:
   pgadmin_data:
