@@ -8,49 +8,53 @@ class Settings(BaseSettings):
     # ... loads from .env automatically when instantiating BaseSettings
     # model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8')
 
-    # ===== Database Settings =====
+    # ===== Database Settings ===== #
     postgres_host: str
     postgres_port: int
     postgres_db: str
     postgres_user: str
     postgres_password: str
 
-    # ===== Redis Settings =====
+    # ===== Redis Settings ===== #
     redis_host: str
     redis_port: int = 6379
     redis_password: str | None
     
-    # ===== Redpanda/Kafka Settings =====
+    # ===== Redpanda/Kafka Settings ===== #
     redpanda_enabled: bool = True
-    redpanda_bootstrap_servers: str 
+    redpanda_bootstrap_servers: str
     redpanda_topic_prefix: str
 
-    # ===== Binance WebSocket Settings =====
+    # ===== Flink ===== #
+    flink_host: str
+    flink_parallelism: int
+
+    # ===== Binance WebSocket Settings ===== #
     binance_ws_url: str 
     symbols: str 
     depth_levels: int = 20
     update_speed: str # Can be "100ms" or "1000ms"
     
-    # ===== Metric Calculation Settings =====
+    # ===== Metric Calculation Settings ===== #
     calculate_depth: int = 10  # Number of order book levels to use
     rolling_window_seconds: int = 60  # Window for velocity calculations
     calculate_velocity: bool = True
     
-    # ===== Alert Settings =====
+    # ===== Alert Settings ===== #
     alert_threshold_high: float = 0.70  # 70% imbalance
     alert_threshold_medium: float = 0.50  # 50% imbalance
     spread_alert_multiplier: float = 2.0  # Alert when spread is 2x normal
     velocity_threshold: float = 0.05  # Alert on rapid changes
     
-    # ===== Logging Settings =====
+    # ===== Logging Settings ===== #
     log_level: str # DEBUG, INFO, WARNING, ERROR, CRITICAL
     log_file: str
     
-    # ===== Application Settings =====
+    # ===== Application Settings ===== #
     app_name: str = "Order Book Monitor"
     environment: str # development, staging, production
 
-    # ===== Computed Properties =====
+    # ===== Computed Properties ===== #
     
     @property
     def symbol_list(self) -> List[str]:

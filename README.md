@@ -194,6 +194,10 @@ DEPTH_LEVELS=20     # Fetch 20 levels from exchange
 │   │   ├── database.py       # Database connection
 │   │   ├── redis_client.py   # Redis client
 │   │   └── models.py         # Data models
+│   ├── jobs/                 # Flink jobs
+│   │   ├── orderbook_metrics.py       # Database connection
+│   │   ├── redis_client.py   # Redis client
+│   ├── producers/            # Flink producers
 │   └── config.py             # Configuration loader
 ├── dashboard/
 │   └── app.py                # Streamlit dashboard

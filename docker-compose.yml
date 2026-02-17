@@ -75,6 +75,47 @@ services:
       retries: 5
       start_period: 5s
 
+  # run once on start up to create topics (one partition per symbol)
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v23.3.3
+    container_name: orderbook_redpanda_init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: |
+      /bin/bash -c "
+      echo 'Creating Redpanda topics...'
+
+      rpk topic create orderbook.raw \
+        --brokers redpanda:9092 \
+        --partitions 3 \
+        --replicas 1 \
+        --topic-config retention.ms=3600000 \
+        --topic-config cleanup.policy=delete
+
+      rpk topic create orderbook.metrics \
+        --brokers redpanda:9092 \
+        --partitions 3 \
+        --replicas 1 \
+        --topic-config retention.ms=3600000 \
+        --topic-config cleanup.policy=delete
+
+      rpk topic create orderbook.alerts \
+        --brokers redpanda:9092 \
+        --partitions 1 \
+        --replicas 1 \
+        --topic-config retention.ms=86400000 \
+        --topic-config cleanup.policy=delete
+
+      echo 'Topics created:'
+      rpk topic list --brokers redpanda:9092
+      "
+    networks:
+      - orderbook_network
+    profiles:
+      - with-redpanda
+    restart: 'no' # Run once and exit
+
   # Redpanda Console (optional - Web UI for Redpanda)
   redpanda-console:
     image: docker.redpanda.com/redpandadata/console:v2.4.3
@@ -145,7 +186,7 @@ services:
         heartbeat.timeout: 5000
     volumes:
       - flink_checkpoints:/opt/flink/checkpoints
-      - ./flink/jobs:/opt/flink/jobs # Mount your Flink jobs
+      - ./src/jobs:/opt/flink/jobs # Mount your Flink jobs
     depends_on:
       redpanda:
         condition: service_healthy
