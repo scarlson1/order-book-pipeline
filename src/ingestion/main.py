@@ -92,8 +92,8 @@ class IngestionService:
             
             # Performance settings
             linger_ms=5,             # Batch messages for 5ms for efficiency
-            batch_size=16384,        # 16KB batch size
-            compression_type='gzip', # Compress messages
+            # batch_size=16384,        # 16KB batch size
+            # compression_type='gzip', # Compress messages
             
             # Timeout settings
             request_timeout_ms=30000,

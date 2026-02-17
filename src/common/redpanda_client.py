@@ -32,8 +32,6 @@ class RedpandaProducer:
     - KafkaProducer: https://kafka-python.readthedocs.io/en/master/apidoc/KafkaProducer.html
     """
     def __init__(self) -> None:
-        # self.producer: Optional[KafkaProducer] = None
-        # self.bootstrap_server = settings.redpanda_bootstrap_servers
         self.producer: Optional[KafkaProducer] = None
         self._closed = False
         
@@ -128,11 +126,11 @@ class RedpandaProducer:
         try:
             kafka_headers = None
             if headers:
-                kafka_headers = [(k, v.endcode('utf-8')) for k, v in headers.items()]
+                kafka_headers = [(k, v.encode('utf-8')) for k, v in headers.items()]
             
             # KafkaProducer.send() is synchronous but non-blocking
             # returns a FutureRecordMetadata immediately
-            future = asyncio.to_thread(
+            future = await asyncio.to_thread(
                 lambda: self.producer.send(
                     topic=topic,
                     key=key,
@@ -312,7 +310,7 @@ class RedpandaConsumer:
         # print(f'Consumer initialized for topic: {topic}') # , group: {group_id}
 
 
-    def connect(self) -> None:
+    async def connect(self) -> None:
         
         if self.consumer is not None:
             return
@@ -322,7 +320,7 @@ class RedpandaConsumer:
             f'topics: {self.topics}'
         )
         try:
-            self.consumer = asyncio.to_thread(
+            self.consumer = await asyncio.to_thread(
                 lambda: KafkaConsumer(
                     *self.topics,
                     bootstrap_servers=settings.redpanda_bootstrap_servers,
