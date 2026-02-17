@@ -51,7 +51,7 @@ from src.common.models import OrderBookSnapshot
 from src.config import settings
 
 
-class OrderbookParser:
+class OrderBookParser:
     """
     Parse incoming raw Binance order book data → `OrderBookSnapshot`
 

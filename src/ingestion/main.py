@@ -60,7 +60,6 @@ class IngestionService:
         self._running = False
         self._shutdown_event = asyncio.Event()
     
-    # old ?? save raw data and process orderbook in Flink ??
     async def handle_orderbook(self, symbol: str, raw_data: dict) -> None:
         """Handle raw order book message from WebSocket.
         
@@ -217,7 +216,6 @@ def setup_signal_handlers(service: IngestionService) -> None:
         loop.add_signal_handler(sig, handle_signal)
     
     logger.info("Signal handlers registered (SIGTERM, SIGINT)")
-
 
 
 async def main() -> None:

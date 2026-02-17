@@ -2,15 +2,15 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.ingestion.orderbook_parser import OrderbookParser
+from src.ingestion.orderbook_parser import OrderBookParser
 
 
 @pytest.fixture()
-def parser() -> OrderbookParser:
-    return OrderbookParser()
+def parser() -> OrderBookParser:
+    return OrderBookParser()
 
 
-def test_parse_valid_binance_diff_depth_message(parser: OrderbookParser):
+def test_parse_valid_binance_diff_depth_message(parser: OrderBookParser):
     raw = {
         "e": "depthUpdate",
         "E": 1672515782136,
@@ -32,7 +32,7 @@ def test_parse_valid_binance_diff_depth_message(parser: OrderbookParser):
     assert snapshot.asks == [(0.0026, 100.0), (0.0027, 50.0)]
 
 
-def test_parse_valid_binance_partial_depth_message(parser: OrderbookParser):
+def test_parse_valid_binance_partial_depth_message(parser: OrderBookParser):
     raw = {
         "lastUpdatedId": 12345,
         "bids": [["100.0", "2.0"], ["99.0", "1.0"]],
@@ -47,7 +47,7 @@ def test_parse_valid_binance_partial_depth_message(parser: OrderbookParser):
     assert snapshot.asks == [(101.0, 1.5), (102.0, 3.0)]
 
 
-def test_bids_sorted_descending(parser: OrderbookParser):
+def test_bids_sorted_descending(parser: OrderBookParser):
     raw = {
         "E": 1700000000000,
         "b": [["100.0", "1.0"], ["101.0", "1.0"], ["99.5", "1.0"]],
@@ -59,7 +59,7 @@ def test_bids_sorted_descending(parser: OrderbookParser):
     assert [p for p, _ in snapshot.bids] == [101.0, 100.0, 99.5]
 
 
-def test_asks_sorted_ascending(parser: OrderbookParser):
+def test_asks_sorted_ascending(parser: OrderBookParser):
     raw = {
         "E": 1700000000000,
         "b": [["100.0", "1.0"]],
@@ -71,7 +71,7 @@ def test_asks_sorted_ascending(parser: OrderbookParser):
     assert [p for p, _ in snapshot.asks] == [101.0, 102.0, 103.0]
 
 
-def test_invalid_levels_filtered_out(parser: OrderbookParser):
+def test_invalid_levels_filtered_out(parser: OrderBookParser):
     raw = {
         "E": 1700000000000,
         "b": [
@@ -118,6 +118,6 @@ def test_invalid_levels_filtered_out(parser: OrderbookParser):
         {"b": [["1.0", "1.0"]], "a": [["bad", "1.0"]]},  # asks empty after parse
     ],
 )
-def test_returns_none_on_bad_input(parser: OrderbookParser, raw):
+def test_returns_none_on_bad_input(parser: OrderBookParser, raw):
     assert parser.parse("BTCUSDT", raw) is None
 
