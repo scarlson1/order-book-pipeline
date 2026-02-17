@@ -439,22 +439,158 @@ class RedisClient:
 
     # ===== Batch Operations =====
 
-    # async def cache_multiple_metrics(
-    #     self,
-    #     metrics_list: List[Dict],
-    #     ttl: int = 60
-    # ) -> int:
+    async def cache_multiple_metrics(
+        self,
+        metrics_list: List[Dict],
+        ttl: int = 60
+    ) -> int:
+        """Cache metrics for multiple symbols at once.
+        
+        Args:
+            metrics_list: List of metrics dictionaries (each must have 'symbol' key)
+            ttl: Time-to-live in seconds
+            
+        Returns:
+            Number of successfully cached items
+            
+        Reference: https://redis.io/commands/mset/
+        """
+        if not self.is_connected():
+            return 0
 
-    # async def get_multiple_metrics(
-    #     self,
-    #     symbols: List[str]
-    # ) -> Dict[str, Optional[Dict]]:
+        success_count = 0
+
+        try:
+            async with self.client.pipeline() as pipe:
+                for metrics in metrics_list:
+                    symbol = metrics.get('symbol')
+                    if not symbol:
+                        continue
+
+                    key = self._metrics_key(symbol)
+                    data = json.dumps(metrics, default=str)
+                    pipe.setex(key, ttl, data)
+
+                # execute all at once
+                results = await pipe.execute()
+                success_count = sum(1 for r in results if r)
+            
+            logger.debug(f'Batch cached {success_count}/{len(metrics_list)} metrics')
+            return success_count
+
+        except Exception as e:
+            logger.error(f'Failed batch cache: {e}')
+            return success_count
+
+    async def get_multiple_metrics(
+        self,
+        symbols: List[str]
+    ) -> Dict[str, Optional[Dict]]:
+        """Get cached metrics for multiple symbols.
+        
+        Args:
+            symbols: List of trading symbols
+            
+        Returns:
+            Dictionary mapping symbol to metrics (or None if not cached)
+            
+        Reference: https://redis.io/commands/mget/
+        """
+        if not self.is_connected():
+            return {symbol: None for symbol in symbols}
+
+        try:
+            keys = [self._metrics_key(symbol) for symbol in symbols]
+
+            values = await self.client.mget(keys)
+
+            result = {}
+            for symbol, value in zip(symbols, values):
+                if value:
+                    result[symbol] = json.loads(value)
+                else:
+                    result[symbol] = None
+
+            return result
+
+        except Exception as e:
+            logger.error(f'Failed batch get: {e}')
+            return {symbol: None for symbol in symbols}
 
     # ===== Utility Methods =====
 
-    # async def delete_key(self, key: str) -> bool:
+    async def delete_key(self, key: str) -> bool:
+        """Delete a specific key.
+        
+        Args:
+            key: Redis key to delete
+            
+        Returns:
+            True if deleted, False otherwise
+            
+        Reference: https://redis.io/commands/del/
+        """
+        if not self.is_connected():
+            return False
 
-    # async def clear_symbol_cache(self, symbol: str) -> int:
+        try:
+            result = await self.client.delete(key)
+            return result > 0
+        except Exception as e:
+            logger.error(f'Failed to delete key {key}: {e}')
+            return False
 
+    async def clear_symbol_cache(self, symbol: str) -> int:
+        """Clear all cached data for a symbol.
+        
+        Args:
+            symbol: Trading symbol
+            
+        Returns:
+            Number of keys deleted
+        """
+        if not self.is_connected():
+            return 0
 
-    # async def get_all_cached_symbols(self) -> List[str]:
+        try:
+            pattern = f'orderbook:*:{symbol.upper()}*'
+            keys=[]
+
+            async for key in self.client.scan_iter(match=pattern):
+                keys.append(key)
+
+            # delete all
+            if keys:
+                deleted = await self.client.delete(*keys)
+                logger.info(f'cleared {deleted} cached items for {symbol}')
+                return deleted
+            
+            return 0
+        
+        except Exception as e:
+            logger.error(f'Failed to clear cache for {symbol}: {e}')
+            return 0
+
+    async def get_all_cached_symbols(self) -> List[str]:
+        """Get list of all symbols with cached data.
+        
+        Returns:
+            List of trading symbols
+            
+        Reference: https://redis.io/commands/scan/
+        """
+        if not self.is_connected():
+            return []
+
+        try:
+            symbols = set()
+            async for key in self.client.scan_iter(match="orderbook:*:latest"):
+                parts = key.split(':')
+                if len(parts) >= 2:
+                    symbols.add(parts[1])
+
+            return sorted(list(symbols))
+        
+        except Exception as e:
+            logger.error(f'Failed to get cached symbols: {e}')
+            return []
