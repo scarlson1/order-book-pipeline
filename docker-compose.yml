@@ -10,6 +10,9 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - '5432:5432'
+    extra_hosts:
+      - 'host.docker.internal:127.0.0.1' #// Linux
+      - 'host.docker.internal:host-gateway' #// Access services on the host machine from within the Docker container
     volumes:
       - timescale_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
@@ -168,15 +171,32 @@ services:
     networks:
       - orderbook_network
 
-    # Apache Flink JobManager - stream processing coordinator
+  # Apache Flink JobManager - stream processing coordinator
   flink-jobmanager:
-    image: flink:1.18-scala_2.12
+    build:
+      context: .
+      dockerfile: Dockerfile.flink
+    # image: flink:1.18-scala_2.12
+    image: orderbook-flink:latest
     container_name: orderbook_flink_jobmanager
+    pull_policy: never
+    platform: 'linux/amd64'
+    hostname: 'jobmanager'
     command: jobmanager
+    expose:
+      - '6123'
     ports:
       - '8081:8081' # Flink Web UI
+    extra_hosts:
+      - 'host.docker.internal:127.0.0.1' #// Linux
+      - 'host.docker.internal:host-gateway' #// Access services on the host machine from within the Docker container
     environment:
-      FLINK_PROPERTIES: |
+      - POSTGRES_URL=${POSTGRES_URL:-jdbc:postgresql://host.docker.internal:5432/postgres}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+      - |
+        FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
         taskmanager.numberOfTaskSlots: 4
         parallelism.default: 2
@@ -186,7 +206,8 @@ services:
         heartbeat.timeout: 5000
     volumes:
       - flink_checkpoints:/opt/flink/checkpoints
-      - ./src/jobs:/opt/flink/jobs # Mount your Flink jobs
+      - ./src/:/opt/src
+      # - ./src/jobs:/opt/flink/jobs # Mount your Flink jobs
     depends_on:
       redpanda:
         condition: service_healthy
@@ -198,23 +219,32 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    # profiles:
-    #   - with-redpanda
 
   # Apache Flink TaskManager - stream processing worker
   flink-taskmanager:
-    image: flink:1.18-scala_2.12
+    # image: flink:1.18-scala_2.12
+    image: orderbook-flink:latest # use image build above in flink-jobmanager
     container_name: orderbook_flink_taskmanager
-    command: taskmanager
+    pull_policy: never
+    platform: 'linux/amd64'
+    command: taskmanager --taskmanager.registration.timeout 5 min
+    expose:
+      - '6121'
+      - '6122'
+    extra_hosts:
+      - 'host.docker.internal:127.0.0.1' #// Linux
+      - 'host.docker.internal:host-gateway' #// Access services on the host machine from within the Docker container
     environment:
-      FLINK_PROPERTIES: |
+      - |
+        FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 4
+        taskmanager.numberOfTaskSlots: 10
         parallelism.default: 2
         state.backend: rocksdb
         state.checkpoints.dir: file:///opt/flink/checkpoints
     volumes:
       - flink_checkpoints:/opt/flink/checkpoints
+      - ./src/:/opt/src
     depends_on:
       - flink-jobmanager
     networks:

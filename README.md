@@ -425,6 +425,130 @@ ruff check src/ dashboard/ tests/
 - Drop-in replacement for pip
 - Used in our Docker builds for faster image building
 
+## Flink Connectors
+
+**Required connectors:**
+
+- Flink Kafka connector: `flink-connector-kafka-1.18.0.jar`
+- Kafka Clients Library (dependency) - `kafka-clients-3.2.3.jar`
+-
+
+### Installation options
+
+**Option 1: download \* mount**
+
+- update `docker-compose.yml` with volume mount to locally installed connector directory
+- use setup script to download
+
+```bash
+#!/bin/bash
+# Download Flink Kafka connector JARs
+#
+# These JARs are required for Flink to read/write from Redpanda.
+# Run this once before starting Flink services.
+
+set -e  # Exit on error
+
+FLINK_VERSION="1.18.0"
+KAFKA_VERSION="3.2.3"
+SCALA_VERSION="2.12"
+
+FLINK_LIB_DIR="./flink/lib"
+
+echo "======================================"
+echo "Downloading Flink Kafka Connector JARs"
+echo "======================================"
+
+# Create lib directory
+mkdir -p "$FLINK_LIB_DIR"
+
+# Flink Kafka Connector
+KAFKA_CONNECTOR_JAR="flink-sql-connector-kafka-${FLINK_VERSION}.jar"
+KAFKA_CONNECTOR_URL="https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/${FLINK_VERSION}/${KAFKA_CONNECTOR_JAR}"
+
+if [ -f "$FLINK_LIB_DIR/$KAFKA_CONNECTOR_JAR" ]; then
+    echo "✓ $KAFKA_CONNECTOR_JAR already exists"
+else
+    echo "Downloading $KAFKA_CONNECTOR_JAR..."
+    curl -L -o "$FLINK_LIB_DIR/$KAFKA_CONNECTOR_JAR" "$KAFKA_CONNECTOR_URL"
+    echo "✓ Downloaded $KAFKA_CONNECTOR_JAR"
+fi
+
+# Kafka Clients (dependency)
+KAFKA_CLIENTS_JAR="kafka-clients-${KAFKA_VERSION}.jar"
+KAFKA_CLIENTS_URL="https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/${KAFKA_VERSION}/${KAFKA_CLIENTS_JAR}"
+
+if [ -f "$FLINK_LIB_DIR/$KAFKA_CLIENTS_JAR" ]; then
+    echo "✓ $KAFKA_CLIENTS_JAR already exists"
+else
+    echo "Downloading $KAFKA_CLIENTS_JAR..."
+    curl -L -o "$FLINK_LIB_DIR/$KAFKA_CLIENTS_JAR" "$KAFKA_CLIENTS_URL"
+    echo "✓ Downloaded $KAFKA_CLIENTS_JAR"
+fi
+
+echo ""
+echo "======================================"
+echo "✓ All Flink connector JARs downloaded"
+echo "======================================"
+echo ""
+echo "Files in $FLINK_LIB_DIR:"
+ls -lh "$FLINK_LIB_DIR"
+echo ""
+echo "You can now start Flink:"
+echo "  docker compose --profile with-redpanda up -d"
+```
+
+```bash
+# Make script executable
+chmod +x flink/download-jars.sh
+
+# Download JARs (one-time setup)
+make flink-jars
+
+# Or run directly:
+./flink/download-jars.sh
+```
+
+```yaml
+# docker-compose.yml
+flink-jobmanager:
+  volumes:
+    - ./flink/lib:/opt/flink/lib # ← Local JARs mounted to Flink's lib
+```
+
+**Option 2: Dockerfile**
+
+See `Dockerfile.flink` - this is the current implimentation.
+
+- `Dockerfile.flink` to build custom image that downloads the connectors
+
+## Production Considerations
+
+Before deploying to production:
+
+1. **Security**:
+   - Change default passwords in `.env`
+   - Use secrets management (Docker secrets, Vault)
+   - Enable SSL/TLS for all connections
+   - Restrict network access with firewall rules
+
+2. **Monitoring**:
+   - Add Prometheus metrics
+   - Set up alerting (PagerDuty, Slack)
+   - Monitor container health
+   - Track database performance
+
+3. **Scaling**:
+   - Use Redpanda for multi-consumer pattern
+   - Scale ingestion service horizontally
+   - Set up TimescaleDB replication
+   - Use Redis Cluster for high availability
+
+4. **Data Retention**:
+   - Enable automatic data cleanup in `init-db.sql`
+   - Compress older data
+   - Archive to S3/object storage
+
 ## Contributing
 
 This is a portfolio project, but suggestions and improvements are welcome!
