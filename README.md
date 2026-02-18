@@ -207,13 +207,55 @@ DEPTH_LEVELS=20     # Fetch 20 levels from exchange
 └── logs/                     # Application logs
 ```
 
-## TODO:
+**End-to-end flow (where the data lives at each step)**
 
-1. **Ingestion Service** (`src/ingestion/`)
-   - Order book parser
-   - Metrics calculator
-   - Database writer
-   - Alert engine
+1. **Binance WebSocket (external source)**
+   - **Location in code:** [`src/ingestion/websocket_client.py`](src/ingestion/websocket_client.py)
+   - **Entry point:** `BinanceWebSocketClient.start()` → `_connect_symbol()` → `_handle_message()`
+   - **Data shape:** raw JSON string → parsed dict, expected keys include `bids`/`asks` for partial book depth (see inline docstring in `BinanceWebSocketClient`).
+   - **What happens:** `_handle_message()` does `json.loads(...)` and calls the callback with `(symbol, data)`.
+
+2. **Ingestion Service callback**
+   - **Location in code:** [`src/ingestion/main.py`](src/ingestion/main.py)
+   - **Function:** `IngestionService.handle_orderbook(symbol, raw_data)`
+   - **Data shape:** `raw_data` is a dict from Binance; `symbol` is the trading symbol string.
+
+3. **Parsing + validation**
+   - **Location in code:** [`src/ingestion/orderbook_parser.py`](src/ingestion/orderbook_parser.py)
+   - **Function:** `OrderBookParser.parse(symbol, raw)`
+   - **Data shape in:** raw Binance dict
+   - **Data shape out:** `OrderBookSnapshot` model (or `None` if invalid)
+   - **Model definition:** `OrderBookSnapshot` in `src/common/models.py`
+   - **What happens:** converts price/volume to floats, sorts bids/asks, filters invalid levels, builds a typed snapshot.
+
+4. **Enrichment + publish to Redpanda**
+   - **Location in code:** [`src/ingestion/main.py`](src/ingestion/main.py)
+   - **Function:** `IngestionService.handle_orderbook(...)`
+   - **Data shape:** `snapshot.model_dump()` merged with:
+     - `ingested_at` (ISO timestamp)
+     - `source` = `"binance_websocket"`
+   - **Topic name:** `settings.redpanda_topics["raw"]` from `src/config.py`
+   - **Publisher:** `RedpandaProducer.publish(...)` in `src/common/redpanda_client.py`
+
+5. **Redpanda topic: `orderbook.raw`**
+   - **Location in code:** config in [`src/config.py`](src/config.py) (`settings.redpanda_topics`)
+   - **Runtime storage:** Redpanda broker (external)
+   - **Message schema:** dict with keys like `timestamp`, `symbol`, `bids`, `asks`, `update_id`, `ingested_at`, `source`.
+   - **Validated by:** `OrderBookSnapshot` in [`src/common/models.py`](src/common/models.py) before publish.
+
+6. **Flink (downstream processing)**
+   - **Intended flow:** Flink consumes `orderbook.raw`, calculates metrics/alerts, produces to:
+     - `settings.redpanda_topics["metrics"]`
+     - `settings.redpanda_topics["alerts"]`
+
+7. **Persistence layer (TimescaleDB / Redis)**
+   - **Database client:** [`src/common/database.py`](src/common/database.py)
+   - **Functions:** `insert_metrics(...)`, `insert_alert(...)`
+   - **Expected data shape:** matches `OrderBookMetrics` and `Alert` in [`src/common/models.py`](src/common/models.py).
+
+---
+
+## TODO:
 
 2. **Dashboard** (`dashboard/`)
    - Streamlit app with visualizations
@@ -226,6 +268,9 @@ DEPTH_LEVELS=20     # Fetch 20 levels from exchange
 ### Service Management
 
 ```bash
+# run once to build Flick with connectors
+docker compose build --no-cache
+
 # Start all services
 docker-compose up -d
 
@@ -521,33 +566,7 @@ flink-jobmanager:
 See `Dockerfile.flink` - this is the current implimentation.
 
 - `Dockerfile.flink` to build custom image that downloads the connectors
-
-## Production Considerations
-
-Before deploying to production:
-
-1. **Security**:
-   - Change default passwords in `.env`
-   - Use secrets management (Docker secrets, Vault)
-   - Enable SSL/TLS for all connections
-   - Restrict network access with firewall rules
-
-2. **Monitoring**:
-   - Add Prometheus metrics
-   - Set up alerting (PagerDuty, Slack)
-   - Monitor container health
-   - Track database performance
-
-3. **Scaling**:
-   - Use Redpanda for multi-consumer pattern
-   - Scale ingestion service horizontally
-   - Set up TimescaleDB replication
-   - Use Redis Cluster for high availability
-
-4. **Data Retention**:
-   - Enable automatic data cleanup in `init-db.sql`
-   - Compress older data
-   - Archive to S3/object storage
+- results in larger docker image, but easier to maintain / removes dev setup step
 
 ## Contributing
 

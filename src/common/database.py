@@ -8,7 +8,6 @@ from typing import List, Dict, Optional
 from datetime import datetime
 from loguru import logger
 from src.config import settings
-from src.common.models import OrderBookMetrics
 
 # TODO: Implement database client
 # - retry logic on failures

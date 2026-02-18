@@ -14,7 +14,7 @@ asyncpg==0.29.0
 # Redis - pure Python (without hiredis for no compilation)
 redis==5.0.1
 
-# Redpanda/Kafka client (optional)
+# Redpanda/Kafka client
 kafka-python-ng==2.2.2
 
 # Data processing

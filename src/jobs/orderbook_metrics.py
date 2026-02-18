@@ -23,22 +23,15 @@ from pyflink.datastream.connectors.kafka import (
 )
 from pyflink.common import WatermarkStrategy, Duration
 from pyflink.common.serialization import SimpleStringSchema
-from pyflink.datastream.window import TumblingEventTimeWindows, SlidingEventTimeWindows
-from pyflink.common.time import Time
+# from pyflink.datastream.window import TumblingEventTimeWindows, SlidingEventTimeWindows
+# from pyflink.common.time import Time
 import json
-import os
 
+from src.config import settings
+from src.ingestion.metrics_calculator import calculate_metrics
 
-# ===== Configuration ===== #
-
-REDPANDA_BROKERS = os.getenv('REDPANDA_BOOTSTRAP_SERVERS', 'redpanda:9092')
-
-TOPIC_RAW = 'orderbook.raw'             # Input: raw order book snapshots
-TOPIC_METRICS = 'orderbook.metrics'     # Output: calculated metrics
-TOPIC_ALERTS = 'orderbook.alerts'       # Output: generated alerts
-
-ALERT_THRESHOLD_HIGH = float(os.getenv('ALERT_THRESHOLD_HIGH', '0.70'))
-
+# TODO: add notes to README about offset strategy ('latest' & run batch to fill gaps ??)
+# parse with OrderBookMetrics to use built in calc methods (mid-price, spread, etc.) ??
 
 # ===== Processing Functions ===== #
 
@@ -54,87 +47,21 @@ def parse_orderbook(raw_message: str) -> dict:
     return json.loads(raw_message)
 
 
-def calculate_imbalance(data: dict) -> dict:
-    """Calculate order book imbalance metrics.
-    
-    Args:
-        data: Parsed order book dictionary
-        
-    Returns:
-        Dictionary with calculated metrics
-    """
-    bids = data.get('bids', [])[:10]
-    asks = data.get('asks', [])[:10]
-    
-    bid_volume = sum(float(vol) for _, vol in bids)
-    ask_volume = sum(float(vol) for _, vol in asks)
-    total_volume = bid_volume + ask_volume
-    
-    if total_volume == 0:
-        return None
-    
-    imbalance_ratio = (bid_volume - ask_volume) / total_volume
-    
-    best_bid = float(bids[0][0]) if bids else 0
-    best_ask = float(asks[0][0]) if asks else 0
-    mid_price = (best_bid + best_ask) / 2
-    spread_bps = ((best_ask - best_bid) / mid_price * 10000) if mid_price > 0 else 0
-    
-    return {
-        'symbol': data['symbol'],
-        'timestamp': data['timestamp'],
-        'mid_price': mid_price,
-        'best_bid': best_bid,
-        'best_ask': best_ask,
-        'imbalance_ratio': imbalance_ratio,
-        'bid_volume': bid_volume,
-        'ask_volume': ask_volume,
-        'total_volume': total_volume,
-        'spread_bps': spread_bps,
-    }
-
-
-def check_alerts(metrics: dict) -> dict | None:
-    """Check if metrics trigger any alerts.
-    
-    Args:
-        metrics: Calculated metrics dictionary
-        
-    Returns:
-        Alert dictionary or None
-    """
-    imbalance = abs(metrics.get('imbalance_ratio', 0))
-    
-    if imbalance >= ALERT_THRESHOLD_HIGH:
-        return {
-            'symbol': metrics['symbol'],
-            'timestamp': metrics['timestamp'],
-            'alert_type': 'EXTREME_IMBALANCE',
-            'severity': 'CRITICAL' if imbalance >= 0.85 else 'HIGH',
-            'message': f"Extreme imbalance detected: {imbalance:.2%}",
-            'metric_value': imbalance,
-            'threshold_value': ALERT_THRESHOLD_HIGH,
-        }
-    
-    return None
-
-
 # ===== Main Flink Job ===== #
 
 def main():
-    """Main Flink job entry point."""
-    
     # Initialize Flink execution environment
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/python/datastream_tutorial/
     env = StreamExecutionEnvironment.get_execution_environment()
+    env.enable_checkpointing(10 * 1000)
     env.set_parallelism(2)
     
     # Configure Kafka/Redpanda source
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/
     source = (
         KafkaSource.builder()
-        .set_bootstrap_servers(REDPANDA_BROKERS)
-        .set_topics(TOPIC_RAW)
+        .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
+        .set_topics(settings.redpanda_topics['raw'])
         .set_group_id('flink-orderbook-processor')
         .set_starting_offsets(KafkaOffsetsInitializer.latest())
         .set_value_only_deserializer(SimpleStringSchema())
@@ -161,46 +88,46 @@ def main():
         raw_stream
         .map(parse_orderbook)
         .filter(lambda x: x is not None)
-        .map(calculate_imbalance)
+        .map(calculate_metrics)
         .filter(lambda x: x is not None)
     )
     
-    # Generate alerts from metrics
-    alerts_stream = (
-        metrics_stream
-        .map(check_alerts)
-        .filter(lambda x: x is not None)
-    )
+    # Generate alerts from metrics (moved to orderbook_alert)
+    # alerts_stream = (
+    #     metrics_stream
+    #     .map(check_alerts)
+    #     .filter(lambda x: x is not None)
+    # )
     
     # Configure Kafka/Redpanda sink for metrics
     metrics_sink = (
         KafkaSink.builder()
-        .set_bootstrap_servers(REDPANDA_BROKERS)
+        .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
         .set_record_serializer(
             KafkaRecordSerializationSchema.builder()
-            .set_topic(TOPIC_METRICS)
+            .set_topic(settings.redpanda_topics['metrics'])
             .set_value_serialization_schema(SimpleStringSchema())
             .build()
         )
         .build()
     )
     
-    # Configure Kafka/Redpanda sink for alerts
-    alerts_sink = (
-        KafkaSink.builder()
-        .set_bootstrap_servers(REDPANDA_BROKERS)
-        .set_record_serializer(
-            KafkaRecordSerializationSchema.builder()
-            .set_topic(TOPIC_ALERTS)
-            .set_value_serialization_schema(SimpleStringSchema())
-            .build()
-        )
-        .build()
-    )
+    # Configure Kafka/Redpanda sink for alerts (moved to orderbook_alert)
+    # alerts_sink = (
+    #     KafkaSink.builder()
+    #     .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
+    #     .set_record_serializer(
+    #         KafkaRecordSerializationSchema.builder()
+    #         .set_topic(settings.redpanda_topics['alerts'])
+    #         .set_value_serialization_schema(SimpleStringSchema())
+    #         .build()
+    #     )
+    #     .build()
+    # )
     
     # Serialize and sink
     metrics_stream.map(json.dumps).sink_to(metrics_sink)
-    alerts_stream.map(json.dumps).sink_to(alerts_sink)
+    # alerts_stream.map(json.dumps).sink_to(alerts_sink) # (moved to orderbook_alert)
     
     # Execute
     env.execute('OrderBook Metrics Processor')
@@ -208,3 +135,93 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+####################################
+## ----- FLINK SQL APPROACH ----- ##
+####################################
+
+# requires the flink-sql-connector-kafka to be installed in Dockerfile.flink
+
+# # Source: orderbook.raw (Kafka/Redpanda)
+# def create_raw_source(t_env):
+#     table_name = 'orderbook_raw'
+#     source_ddl = f"""
+#         CREATE TABLE {table_name} (
+#             `timestamp` STRING,
+#             symbol STRING,
+#             bids ARRAY<ARRAY<STRING>>,
+#             asks ARRAY<ARRAY<STRING>>,
+#             update_id BIGINT,
+#             ingested_at STRING,
+#             source STRING,
+#             proc_time AS PROCTIME()
+#             watermark_timestamp AS TO_TIMESTAMP('timestamp'),
+#             WATERMARK FOR watermark_timestamp AS watermark_timestamp - INTERVAL '5' SECOND
+#         ) WITH (
+#             'connector' = 'kafka',
+#             'topic' = 'orderbook.raw',
+#             'properties.bootstrap.servers' = '{settings.redpanda_bootstrap_servers}',
+#             'properties.group.id' = 'flink-orderbook-raw',
+#             'scan.startup.mode' = 'latest-offset',
+#             'format' = 'json'
+#         );
+#         """
+#     t_env.execute_sql(source_ddl)
+#     return table_name
+    
+
+# # Sink: orderbook.metrics (Kafka/Redpanda)
+# def create_metrics_sink(t_env):
+#     table_name = 'orderbook_metrics'
+#     source_ddl = f"""
+#         CREATE TABLE {table_name} (
+#             symbol STRING,
+#             mid_price DOUBLE,
+#             best_bid DOUBLE,
+#             best_ask DOUBLE,
+#             spread_bps DOUBLE,
+#             event_time TIMESTAMP_LTZ(3)
+#         ) WITH (
+#             'connector' = 'kafka',
+#             'topic' = 'orderbook.metrics',
+#             'properties.bootstrap.servers' = '{settings.redpanda_bootstrap_servers}',
+#             'format' = 'json'
+#         );
+#         """
+#     t_env.execute_sql(source_ddl)
+#     return table_name
+
+
+# def process_metrics():
+#     env = StreamExecutionEnvironment.get_execution_environment()
+#     env.enable_checkpointing(10 * 1000)
+#     # env.set_parallelism(1)
+
+#     # Set up the table environment
+#     settings = EnvironmentSettings.new_instance().in_streaming_mode().build()
+#     t_env = StreamTableEnvironment.create(env, environment_settings=settings)
+
+#     try:
+#         source_table = create_raw_source(t_env)
+#         sink_table = create_metrics_sink(t_env)
+
+#         # Insert computed metrics
+#         t_env.execute_sql(
+#             f"""
+#                 INSERT INTO {sink_table}
+#                 SELECT
+#                     symbol,
+#                     (CAST(asks[1][1] AS DOUBLE) + CAST(bids[1][1] AS DOUBLE)) / 2 AS mid_price,
+#                     CAST(bids[1][1] AS DOUBLE) AS best_bid,
+#                     CAST(asks[1][1] AS DOUBLE) AS best_ask,
+#                     ((CAST(asks[1][1] AS DOUBLE) - CAST(bids[1][1] AS DOUBLE)) /
+#                     ((CAST(asks[1][1] AS DOUBLE) + CAST(bids[1][1] AS DOUBLE)) / 2)) * 10000
+#                         AS spread_bps,
+#                     TO_TIMESTAMP_LTZ(CAST(`timestamp` AS BIGINT), 3) AS event_time
+#                 FROM {source_table}
+#                 WHERE cardinality(bids) > 0 AND cardinality(asks) > 0;
+#             """
+#         ).wait()
+    
+#     except Exception as e:
+#         print(f'Failed writing records from Kafka to JDBC: {str(e)}')

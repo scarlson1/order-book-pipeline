@@ -1,0 +1,2 @@
+# Flink runtime for PyFlink jobs (keep separate from app/dashboard images)
+apache-flink==2.0.1

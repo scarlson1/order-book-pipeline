@@ -27,6 +27,7 @@ make uv-install
 ```
 
 **Why uv?**
+
 - 10-100x faster than pip
 - Better dependency resolution
 - Built in Rust for maximum performance
@@ -135,6 +136,7 @@ just test-cov
 ### Useful Commands
 
 #### Using Makefile
+
 ```bash
 make up              # Start Docker services
 make down            # Stop Docker services
@@ -148,6 +150,7 @@ make help            # See all commands
 ```
 
 #### Using justfile (Modern Alternative)
+
 ```bash
 just up              # Start Docker services
 just down            # Stop Docker services
@@ -219,6 +222,9 @@ The `docker-compose.override.yml.example` shows how to mount code for live reloa
 # Copy the example
 cp docker-compose.override.yml.example docker-compose.override.yml
 
+# build flink docker file (download connectors)
+docker-compose build --no-cache
+
 # Start with overrides (auto-reloads on code changes)
 docker-compose up -d
 ```
@@ -245,26 +251,26 @@ Create `.vscode/launch.json`:
 
 ```json
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Python: Ingestion Service",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/ingestion/main.py",
-            "console": "integratedTerminal",
-            "envFile": "${workspaceFolder}/.env"
-        },
-        {
-            "name": "Python: Dashboard",
-            "type": "python",
-            "request": "launch",
-            "module": "streamlit",
-            "args": ["run", "dashboard/app.py"],
-            "console": "integratedTerminal",
-            "envFile": "${workspaceFolder}/.env"
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Ingestion Service",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/ingestion/main.py",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Python: Dashboard",
+      "type": "python",
+      "request": "launch",
+      "module": "streamlit",
+      "args": ["run", "dashboard/app.py"],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ]
 }
 ```
 
@@ -338,15 +344,16 @@ ALTER SYSTEM SET log_duration = on;
 SELECT pg_reload_conf();
 
 -- Check slow queries
-SELECT calls, total_time, mean_time, query 
-FROM pg_stat_statements 
-ORDER BY mean_time DESC 
+SELECT calls, total_time, mean_time, query
+FROM pg_stat_statements
+ORDER BY mean_time DESC
 LIMIT 10;
 ```
 
 ## Testing Strategy
 
 ### Unit Tests
+
 ```bash
 # Test individual functions
 pytest tests/test_metrics.py -v
@@ -356,12 +363,14 @@ pytest -m "not slow" -v
 ```
 
 ### Integration Tests
+
 ```bash
 # Test with real database (Docker must be running)
 pytest tests/test_integration.py -v
 ```
 
 ### Load Testing
+
 ```bash
 # Install locust
 uv pip install locust
@@ -384,7 +393,7 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: timescale/timescaledb:latest-pg15
@@ -392,22 +401,22 @@ jobs:
           POSTGRES_PASSWORD: test
       redis:
         image: redis:7-alpine
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v1
-        
+
       - name: Set up Python
         run: uv python install 3.11
-        
+
       - name: Install dependencies
         run: uv pip install -e ".[dev]"
-        
+
       - name: Run tests
         run: pytest
-        
+
       - name: Run linting
         run: |
           ruff check .
