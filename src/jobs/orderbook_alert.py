@@ -465,7 +465,6 @@ class VelocitySpikeDetector(KeyedProcessFunction):
         self.prev_timestamp_state.update(curr_timestamp)
 
 
-
 # ===== Aggregate Functions ===== #
 
 class SpreadAverageAggregateFunction(AggregateFunction):
@@ -493,146 +492,148 @@ def main():
     env.enable_checkpointing(10 * 1000)
     env.set_parallelism(settings.flink_parallelism)
 
-    # -----------------------------------------------------------------
-    # KafkaSource — orderbook.metrics
-    # -----------------------------------------------------------------
-    # TODO:
-    #   - [ ] For production, use `KafkaOffsetsInitializer.committed_offsets()`
-    #         with a fallback to `earliest()` to resume from checkpointed offsets.
-    #         Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/#consumer-offset-committing
-    #   - Replace `SimpleStringSchema` with a typed deserializer (e.g., a
-    #         custom `DeserializationSchema` that returns `OrderBookMetrics`)
-    #         for end-to-end type safety.
-    #         Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/#kafka-deserializationschema
-    #
-    # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/
-    source = (
-        KafkaSource.builder()
-            .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
-            .set_topics(settings.redpanda_topics['metrics'])
-            .set_group_id('flink-alerts-processor')
-            .set_starting_offsets(KafkaOffsetsInitializer.latest())
-            .set_value_only_deserializer(SimpleStringSchema())
-            .build()
-    )
+    try:
 
-    # Configure watermark strategy for event time processing
-    # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/
-    watermark_strategy = WatermarkStrategy.for_bounded_out_of_orderness(
-        Duration.of_seconds(5)
-    ).with_idleness(Duration.of_seconds(10))
-
-    # Build processing pipeline
-    # TODO: key the stream by symbol immediately after parsing so all stateful operators (imbalance flip, rate limiter) share the same key scope without an extra keyBy call.
-    #       Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/datastream/operators/overview/#keyby
-    metrics_stream = (
-        env.from_source(
-            source=source,
-            watermark_strategy=watermark_strategy,
-            source_name="Redpanda OrderBook Metrics",
+        # -----------------------------------------------------------------
+        # KafkaSource — orderbook.metrics
+        # -----------------------------------------------------------------
+        # TODO:
+        #   - [ ] For production, use `KafkaOffsetsInitializer.committed_offsets()`
+        #         with a fallback to `earliest()` to resume from checkpointed offsets.
+        #         Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/#consumer-offset-committing
+        #   - Replace `SimpleStringSchema` with a typed deserializer (e.g., a
+        #         custom `DeserializationSchema` that returns `OrderBookMetrics`)
+        #         for end-to-end type safety.
+        #         Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/#kafka-deserializationschema
+        #
+        # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/
+        source = (
+            KafkaSource.builder()
+                .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
+                .set_topics(settings.redpanda_topics['metrics'])
+                .set_group_id('flink-alerts-processor')
+                .set_starting_offsets(KafkaOffsetsInitializer.latest())
+                .set_value_only_deserializer(SimpleStringSchema())
+                .build()
         )
-        .map(parse_metrics)
-        .filter(lambda x: x is not None)
-        .key_by(lambda a: a['symbol'])
-    )
 
-    # -----------------------------------------------------------------
-    # check_extreme_imbalance()  — abs(imbalance) > HIGH threshold
-    # -----------------------------------------------------------------
-    extreme_imbalance_stream = metrics_stream \
-        .map(check_extreme_imbalance) \
-        .filter(lambda x: x is not None)
-        
+        # Configure watermark strategy for event time processing
+        # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/
+        watermark_strategy = WatermarkStrategy.for_bounded_out_of_orderness(
+            Duration.of_seconds(5)
+        ).with_idleness(Duration.of_seconds(10))
 
-    # -----------------------------------------------------------------
-    # check_imbalance_flip()  — sign change detection with keyed state
-    # -----------------------------------------------------------------
-    imbalance_flip_stream = (
-        metrics_stream
-            .process(ImbalanceFlipDetector()) # class in order to extend KeyedProcessFunction
-            .filter(lambda x: x is not None)
-    )
-
-    # -----------------------------------------------------------------
-    # check_spread_widening()  — spread > N * rolling average
-    # -----------------------------------------------------------------
-    # Uses a sliding window to maintain a rolling average of `spread_bps` per
-    # symbol, then compares the latest value against
-    # `settings.spread_alert_multiplier` (default 2.0×).
-    windowed = (
-        metrics_stream
-            .window(SlidingEventTimeWindows.of(
-                Time.minutes(5),   # window size
-                Time.seconds(30),  # slide interval
-            ))
-            .aggregate(
-                SpreadAverageAggregateFunction(),
-                accumulator_type=Types.TUPLE([Types.DOUBLE(), Types.INTEGER()]),
-                output_type=Types.DOUBLE()
+        # Build processing pipeline
+        # TODO: key the stream by symbol immediately after parsing so all stateful operators (imbalance flip, rate limiter) share the same key scope without an extra keyBy call.
+        #       Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/datastream/operators/overview/#keyby
+        metrics_stream = (
+            env.from_source(
+                source=source,
+                watermark_strategy=watermark_strategy,
+                source_name="Redpanda OrderBook Metrics",
             )
-    )
-
-    raw_keyed = metrics_stream
-    windowed_keyed = windowed.key_by(lambda x: x[0] if isinstance(x, tuple) else x.get('symbol'))
-
-    connected = raw_keyed.connect(windowed_keyed) 
-
-    spread_widening_stream = connected.process(SpreadWideningJoinFunction()).filter(lambda x: x is not None)
-
-    # -----------------------------------------------------------------
-    # check_velocity_spike()  — rate of change exceeds threshold
-    # -----------------------------------------------------------------
-    velocity_spike_stream = (
-        metrics_stream
-            .process(VelocitySpikeDetector(window_seconds=settings.rolling_window_seconds))
+            .map(parse_metrics)
             .filter(lambda x: x is not None)
-    )
+            .key_by(lambda a: a['symbol'])
+        )
 
-    # -----------------------------------------------------------------
-    # Rate limiting — deduplicate with keyed state + timer
-    # -----------------------------------------------------------------
+        # -----------------------------------------------------------------
+        # check_extreme_imbalance()  — abs(imbalance) > HIGH threshold
+        # -----------------------------------------------------------------
+        extreme_imbalance_stream = metrics_stream \
+            .map(check_extreme_imbalance) \
+            .filter(lambda x: x is not None)
+            
 
-    all_alerts = extreme_imbalance_stream.union(
-        imbalance_flip_stream,
-        spread_widening_stream,
-        velocity_spike_stream
-    )
+        # -----------------------------------------------------------------
+        # check_imbalance_flip()  — sign change detection with keyed state
+        # -----------------------------------------------------------------
+        imbalance_flip_stream = (
+            metrics_stream
+                .process(ImbalanceFlipDetector()) # class in order to extend KeyedProcessFunction
+                .filter(lambda x: x is not None)
+        )
 
-    # remove alerts by symbol+type that occurred in the last minute (key_by partitions the suppression state)
-    deduped_alerts = (
-        all_alerts
-            .key_by(lambda a: f'{a['symbol']}_{a['alert_type']}')
-            .process(AlertRateLimiter(cooldown_ms=60_000))
-    )
+        # -----------------------------------------------------------------
+        # check_spread_widening()  — spread > N * rolling average
+        # -----------------------------------------------------------------
+        # Uses a sliding window to maintain a rolling average of `spread_bps` per
+        # symbol, then compares the latest value against
+        # `settings.spread_alert_multiplier` (default 2.0×).
+        windowed = (
+            metrics_stream
+                .window(SlidingEventTimeWindows.of(
+                    Time.minutes(5),   # window size
+                    Time.seconds(30),  # slide interval
+                ))
+                .aggregate(
+                    SpreadAverageAggregateFunction(),
+                    accumulator_type=Types.TUPLE([Types.DOUBLE(), Types.INTEGER()]),
+                    output_type=Types.DOUBLE()
+                )
+        )
 
-    # Temporary: use extreme_imbalance_stream directly until all checks are implemented
-    alerts_stream = extreme_imbalance_stream
+        raw_keyed = metrics_stream
+        windowed_keyed = windowed.key_by(lambda x: x[0] if isinstance(x, tuple) else x.get('symbol'))
 
-    # -----------------------------------------------------------------
-    # KafkaSink — orderbook.alerts
-    # -----------------------------------------------------------------
-    #   - [ ] Replace `SimpleStringSchema` with a typed serializer that
-    #         accepts `Alert` objects directly.
-    #         Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/#kafka-serializationschema
-    alerts_sink = (
-        KafkaSink.builder()
-            .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
-            .set_record_serializer(
-                KafkaRecordSerializationSchema.builder()
-                    .set_topic(settings.redpanda_topics["alerts"])
-                    .set_value_serialization_schema(SimpleStringSchema())
-                    .build()
-            )
-            .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
-            .set_transactional_id_prefix('orderbook-alerts')
-            .build()
-    )
+        connected = raw_keyed.connect(windowed_keyed) 
 
-    # Serialize and sink
-    alerts_stream.map(lambda a: json.dumps(a.to_dict())).sink_to(alerts_sink)
+        spread_widening_stream = connected.process(SpreadWideningJoinFunction()).filter(lambda x: x is not None)
 
-    # Execute
-    env.execute("OrderBook Alerts Processor")
+        # -----------------------------------------------------------------
+        # check_velocity_spike()  — rate of change exceeds threshold
+        # -----------------------------------------------------------------
+        velocity_spike_stream = (
+            metrics_stream
+                .process(VelocitySpikeDetector(window_seconds=settings.rolling_window_seconds))
+                .filter(lambda x: x is not None)
+        )
+
+        # -----------------------------------------------------------------
+        # Rate limiting — deduplicate with keyed state + timer
+        # -----------------------------------------------------------------
+
+        all_alerts = extreme_imbalance_stream.union(
+            imbalance_flip_stream,
+            spread_widening_stream,
+            velocity_spike_stream
+        )
+
+        # remove alerts by symbol+type that occurred in the last minute (key_by partitions the suppression state)
+        deduped_alerts = (
+            all_alerts
+                .key_by(lambda a: f'{a['symbol']}_{a['alert_type']}')
+                .process(AlertRateLimiter(cooldown_ms=60_000))
+        )
+
+        # -----------------------------------------------------------------
+        # KafkaSink — orderbook.alerts
+        # -----------------------------------------------------------------
+        #   - [ ] Replace `SimpleStringSchema` with a typed serializer that
+        #         accepts `Alert` objects directly.
+        #         Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/#kafka-serializationschema
+        alerts_sink = (
+            KafkaSink.builder()
+                .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
+                .set_record_serializer(
+                    KafkaRecordSerializationSchema.builder()
+                        .set_topic(settings.redpanda_topics["alerts"])
+                        .set_value_serialization_schema(SimpleStringSchema())
+                        .build()
+                )
+                .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                .set_transactional_id_prefix('orderbook-alerts')
+                .build()
+        )
+
+        # Serialize and sink
+        deduped_alerts.map(lambda a: json.dumps(a.to_dict())).sink_to(alerts_sink)
+
+        # Execute
+        env.execute("OrderBook Alerts Processor")
+
+    except Exception as e:
+        print('writing alert records from Kafka to JDBC failed: ', str(e))
 
 
 if __name__ == "__main__":

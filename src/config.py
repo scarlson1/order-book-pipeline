@@ -110,6 +110,7 @@ class Settings(BaseSettings):
         return {
             "metrics": f"{self.redpanda_topic_prefix}.metrics",
             "alerts": f"{self.redpanda_topic_prefix}.alerts",
+            "windowed": f"{self.redpanda_topic_prefix}.metrics.windowed",
             "raw": f"{self.redpanda_topic_prefix}.raw",
         }
 

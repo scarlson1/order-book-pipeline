@@ -72,8 +72,8 @@ def main():
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/
     watermark_strategy = (
         WatermarkStrategy
-        .for_bounded_out_of_orderness(Duration.of_seconds(5))
-        .with_idleness(Duration.of_seconds(10))
+            .for_bounded_out_of_orderness(Duration.of_seconds(5))
+            .with_idleness(Duration.of_seconds(10))
     )
     
     # Build processing pipeline
