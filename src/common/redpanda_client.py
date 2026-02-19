@@ -59,7 +59,7 @@ class RedpandaProducer:
             # run sync KafkaProducer creation in executor (don't block event loop)
             self.producer = await asyncio.to_thread(
                 lambda: KafkaProducer(
-                    bootstrap_servers=[self.bootstrap_server],
+                    bootstrap_servers=[settings.redpanda_bootstrap_servers],
 
                     # serialization
                     # JSON serializer: dict → JSON string → UTF-8 bytes
@@ -300,15 +300,6 @@ class RedpandaConsumer:
         self.consumer: Optional[KafkaConsumer] = None
         self._closed = False
         self._messages_consumed = 0
-        # self.consumer = KafkaConsumer(
-        #     topic,
-        #     bootstrap_servers=settings.redpanda_bootstrap_servers,
-        #     group_id=group_id,
-        #     auto_offset_reset=auto_offset_reset,
-        #     value_deserializer=lambda m: json.loads(m.decode('utf-8'))
-        # )
-        # print(f'Consumer initialized for topic: {topic}') # , group: {group_id}
-
 
     async def connect(self) -> None:
         

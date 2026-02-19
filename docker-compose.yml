@@ -147,23 +147,36 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      POSTGRES_HOST: timescaledb
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: orderbook
-      POSTGRES_USER: orderbook_user
-      POSTGRES_PASSWORD: orderbook_pass
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDPANDA_ENABLED: 'false'
-      REDPANDA_BOOTSTRAP_SERVERS: redpanda:9092
-      # Binance WebSocket settings
-      SYMBOLS: BTCUSDT,ETHUSDT,SOLUSDT
-      DEPTH_LEVELS: 20
-      UPDATE_SPEED: 100ms
-      # Metric calculation settings
-      CALCULATE_DEPTH: 10
-      ALERT_THRESHOLD: 0.7
+    env_file:
+      - .env
+    # environment:
+    #   POSTGRES_HOST: timescaledb
+    #   POSTGRES_PORT: 5432
+    #   POSTGRES_DB: orderbook
+    #   POSTGRES_USER: orderbook_user
+    #   POSTGRES_PASSWORD: orderbook_pass
+    #   REDIS_HOST: redis
+    #   REDIS_PORT: 6379
+    #   REDIS_PASSWORD: ''
+    #   REDPANDA_ENABLED: 'false'
+    #   REDPANDA_BOOTSTRAP_SERVERS: redpanda:9092
+    #   REDPANDA_TOPIC_PREFIX: orderbook
+    #   # Flink settings
+    #   FLINK_HOST: flink-jobmanager
+    #   FLINK_PARALLELISM: 1
+    #   # Binance WebSocket settings
+    #   BINANCE_WS_URL: wss://stream.binance.us:9443/ws
+    #   SYMBOLS: BTCUSDT,ETHUSDT,SOLUSDT
+    #   DEPTH_LEVELS: 20
+    #   UPDATE_SPEED: 100ms
+    #   # Metric calculation settings
+    #   CALCULATE_DEPTH: 10
+    #   ALERT_THRESHOLD: 0.7
+    #   # Logging settings
+    #   LOG_LEVEL: INFO
+    #   LOG_FILE: /app/logs/orderbook.log
+    #   # Application settings
+    #   ENVIRONMENT: development
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs

@@ -38,6 +38,8 @@ from pyflink.common.typeinfo import Types
 from src.common.models import Alert, AlertType, OrderBookMetrics, Severity
 from src.config import settings
 
+# TODO: which parts need to be calculated from the windowed metrics ??
+
 
 # ===== Parsing ===== #
 

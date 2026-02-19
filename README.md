@@ -428,6 +428,7 @@ Before deploying to production:
    - Enable automatic data cleanup in `init-db.sql`
    - Compress older data
    - Archive to S3/object storage
+   - Connect rocksDB to external storage (S3, GCS)
 
 ## License
 
@@ -461,14 +462,6 @@ pytest
 black src/ dashboard/ tests/
 ruff check src/ dashboard/ tests/
 ```
-
-**Why uv?**
-
-- 10-100x faster than pip for installing packages
-- Better dependency resolution
-- Built in Rust for maximum performance
-- Drop-in replacement for pip
-- Used in our Docker builds for faster image building
 
 ## Flink Connectors
 

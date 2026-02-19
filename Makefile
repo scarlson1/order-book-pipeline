@@ -22,6 +22,9 @@ help:
 	@echo "  make flink-ui        - Open Flink Web UI"
 	@echo "  make flink-logs      - View Flink logs"
 	@echo "  make flink-jobs      - List running Flink jobs"
+	@echo "  make flink-metrics   - Run orderbook_metrics job"
+	@echo "  make flink-alert   	- Run orderbook_alerts job"
+	@echo "  make flink-windows   - Run orderbook_windows job"
 	@echo ""
 	@echo "Monitoring commands:"
 	@echo "  make status          - Check service status"
@@ -77,6 +80,15 @@ flink-logs:
 
 flink-jobs:
 	docker-compose exec flink-jobmanager flink list
+
+flink-metrics:
+	docker compose exec flink-jobmanager ./bin/flink run -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d
+
+flink-alerts:
+	docker compose exec flink-jobmanager ./bin/flink run -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d
+
+flink-windows:
+	docker compose exec flink-jobmanager ./bin/flink run -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d
 
 # Stop services
 down:

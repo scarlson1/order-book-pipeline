@@ -113,6 +113,63 @@ class DatabaseClient:
                 metrics.get('update_id')
             )
 
+    async def insert_batch_metrics(self, metrics: list[dict]) -> None:
+        """Insert batch of order book metrics efficiently.
+        
+        Uses asyncpg's copy_records_to_table for optimal bulk insert performance
+        (10-100x faster than individual inserts via COPY protocol).
+        
+        Args:
+            metrics: List of metric dictionaries with all required fields
+            
+        Reference: https://magicstack.github.io/asyncpg/current/api/index.html#asyncpg.Connection.copy_records_to_table
+        """
+        if not metrics:
+            return
+        
+        # Prepare records as tuples matching column order exactly
+        records = [
+            (
+                m['timestamp'],
+                m['symbol'],
+                m['mid_price'],
+                m['best_bid'],
+                m['best_ask'],
+                m['imbalance_ratio'],
+                m.get('weighted_imbalance'),
+                m['bid_volume'],
+                m['ask_volume'],
+                m.get('total_volume'),
+                m['spread_bps'],
+                m.get('spread_abs'),
+                m.get('vtob_ratio'),
+                m.get('best_bid_volume'),
+                m.get('best_ask_volume'),
+                m.get('imbalance_velocity'),
+                m.get('depth_levels'),
+                m.get('update_id')
+            )
+            for m in metrics
+        ]
+        
+        columns = [
+            'time', 'symbol', 'mid_price', 'best_bid', 'best_ask',
+            'imbalance_ratio', 'weighted_imbalance',
+            'bid_volume', 'ask_volume', 'total_volume',
+            'spread_bps', 'spread_abs',
+            'vtob_ratio', 'best_bid_volume', 'best_ask_volume',
+            'imbalance_velocity', 'depth_levels', 'update_id'
+        ]
+        
+        async with self.pool.acquire() as conn:
+            await conn.copy_records_to_table(
+                'orderbook_metrics',
+                records=records,
+                columns=columns
+            )
+        
+        logger.debug(f"Inserted batch of {len(metrics)} metrics")
+
     async def insert_alert(self, alert: Dict) -> None:
         """Insert alert.
         

@@ -1,13 +1,5 @@
 # Windowed Aggregations
 
-# - [ ] Tumbling 1-minute windows per symbol
-#   - [ ] avg, min, max imbalance
-#   - [ ] avg spread, avg volume
-#   - [ ] sample count
-# - [ ] Sliding 5-minute windows (every 30 seconds)
-#   - [ ] Rolling statistics used by alert engine
-# - [ ] Sink to `orderbook.metrics.windowed` topic
-
 import json
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.common.watermark_strategy import WatermarkStrategy
@@ -23,18 +15,12 @@ from pyflink.common.serialization import SimpleStringSchema
 from pyflink.datastream.window import SlidingEventTimeWindows, TumblingProcessingTimeWindows
 from pyflink.datastream.functions import AggregateFunction, KeyedProcessFunction, KeyedCoProcessFunction
 
-from src.common.models import Alert, AlertType, OrderBookMetrics, Severity
+from src.common.models import  OrderBookMetrics
 from src.config import settings
 from jobs.orderbook_alert import parse_metrics
 
-# TODO: where are agg windows saved ?? Don't appear to have a pydantic type / table created ??
-# def calc_tumbling_vals(metrics: OrderBookMetrics) -> dict:
-
 # ===== Aggregate Functions ===== #
 
-#   - [ ] avg, min, max imbalance
-#   - [ ] avg spread, avg volume
-#   - [ ] sample count
 class TumblingAggFunction(AggregateFunction):
     def create_accumulator(self) -> dict: # todo: type
         return {
@@ -190,7 +176,7 @@ def main():
         )
 
         # TEMPORARY UNTIL FINAL STREAM IS COMPLETE
-        metrics_stream.map(lambda x: json.dumps(x.model_dump(mode='json'))).sink_to(aggregate_sink)
+        all_windowed.map(lambda x: json.dumps(x.model_dump(mode='json'))).sink_to(aggregate_sink)
 
         env.execute("OrderBook Window Aggregate Processor")
 

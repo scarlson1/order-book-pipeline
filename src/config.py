@@ -1,12 +1,15 @@
 from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings #, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 # from pydantic import SecretStr
 
 class Settings(BaseSettings):
     # https://docs.pydantic.dev/latest/concepts/pydantic_settings/#dotenv-env-support
-    # ... loads from .env automatically when instantiating BaseSettings
-    # model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8')
+    model_config = SettingsConfigDict(
+        env_file='.env', 
+        env_file_encoding='utf-8',
+        extra='ignore'  # Allow extra fields in .env (like Streamlit settings)
+    )
 
     # ===== Database Settings ===== #
     postgres_host: str
@@ -18,7 +21,7 @@ class Settings(BaseSettings):
     # ===== Redis Settings ===== #
     redis_host: str
     redis_port: int = 6379
-    redis_password: str | None
+    redis_password: str | None = None
     
     # ===== Redpanda/Kafka Settings ===== #
     redpanda_enabled: bool = True
@@ -134,7 +137,7 @@ class Settings(BaseSettings):
 
     @field_validator('alert_threshold_high')
     @classmethod
-    def validate_threshold(cls, v: float) -> float:
+    def validate_threshold_high(cls, v: float) -> float:
         """Validate threshold is a percentage (0-1)"""
         if not 0 <= v <= 1:
             raise ValueError(f"Threshold high must be between 0-1, got {v}")
@@ -142,7 +145,7 @@ class Settings(BaseSettings):
 
     @field_validator('alert_threshold_medium')
     @classmethod
-    def validate_threshold(cls, v: float) -> float:
+    def validate_threshold_medium(cls, v: float) -> float:
         """Validate threshold is a percentage (0-1)"""
         if not 0 <= v <= 1:
             raise ValueError(f"Threshold medium must be between 0-1, got {v}")
@@ -182,9 +185,6 @@ class Settings(BaseSettings):
         if self.redpanda_enabled and not self.redpanda_bootstrap_servers:
             raise ValueError("Redpanda requires bootstrap_servers")
         return self
-
-    class Config:
-        env_file = ".env"
 
 # print(Settings().model_dump())
 
