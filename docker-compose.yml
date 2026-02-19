@@ -184,6 +184,35 @@ services:
     networks:
       - orderbook_network
 
+  # Add this service after the ingestion service
+  consumers:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumers
+    container_name: orderbook_consumers
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_HOST: timescaledb
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: orderbook
+      POSTGRES_USER: orderbook_user
+      POSTGRES_PASSWORD: orderbook_pass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDPANDA_BOOTSTRAP_SERVERS: redpanda:9092
+    volumes:
+      - ./src:/app/src
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - orderbook_network
+
   # Apache Flink JobManager - stream processing coordinator
   flink-jobmanager:
     build:

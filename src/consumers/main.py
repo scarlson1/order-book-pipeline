@@ -20,15 +20,11 @@ async def main():
             logger.info(f'DatabaseConsumer Status: {dbHealth}')
 
     try:
-
-
         await asyncio.gather(
             redisConsumer.start(),
             dbConsumer.start(),
             log_health()
         )
-        
-
     
     except Exception as e:
         logger.error(f'Error with consumers: {e}')
