@@ -97,18 +97,6 @@ class RedisClient:
                 self.client = None
                 self._closed = True
 
-    # ===== Context Manager Support =====
-    
-    async def __aenter__(self):
-        """Async context manager entry."""
-        await self.connect()
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        await self.close()
-        return False
-
     # ===== Health & status =====
 
     def is_connected(self) -> bool:
@@ -594,3 +582,15 @@ class RedisClient:
         except Exception as e:
             logger.error(f'Failed to get cached symbols: {e}')
             return []
+
+        # ===== Context Manager Support =====
+    
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.connect()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
+        return False

@@ -22,8 +22,8 @@ Documentation:
 """
 
 import asyncio
-import signal
 from datetime import datetime, timezone
+from common.utils import setup_signal_handlers
 from loguru import logger
 
 from src.common.redpanda_client import RedpandaProducer
@@ -196,26 +196,7 @@ class IngestionService:
         )
 
 
-def setup_signal_handlers(service: IngestionService) -> None:
-    """Register OS signal handlers for graceful shutdown.
-    
-    Handles SIGTERM (Docker stop) and SIGINT (Ctrl+C).
-    
-    Args:
-        service: IngestionService instance to stop on signal
-        
-    Reference: https://docs.python.org/3/library/signal.html
-    """
-    loop = asyncio.get_event_loop()
-    
-    def handle_signal():
-        logger.info("Shutdown signal received")
-        loop.create_task(service.stop())
-    
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, handle_signal)
-    
-    logger.info("Signal handlers registered (SIGTERM, SIGINT)")
+
 
 
 async def main() -> None:

@@ -44,13 +44,13 @@ class DatabaseConsumer:
         )
         self.db = DatabaseClient()
         
-        # Batch state
+        # batch state
         self._batch: list[dict] = []
         self._batch_max_size = 100
         self._batch_timeout_seconds = 1.0
         self._last_flush_time = datetime.datetime.now(datetime.timezone.utc)
         
-        # State
+        # state
         self._running = False
         self._start_task: Optional[asyncio.Task] = None # track running task state
 
@@ -242,6 +242,13 @@ class DatabaseConsumer:
         await self.db.insert_alert(alert)
         logger.debug(f"Inserted alert: {value.get('alert_type')} for {value.get('symbol')}")
 
+    def get_stats(self) -> dict:
+        """Get consumer statistics."""
+        return {
+            'current_batch_count': len(self._batch),
+            '_last_flush_time': self._last_flush_time,
+            'running': self._running
+        }
 
 async def main():
     """Main entry point for testing."""
