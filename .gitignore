@@ -35,7 +35,7 @@ logs/
 # Database
 *.db
 *.sqlite
-*.sql
+# *.sql
 
 # IDE
 .vscode/

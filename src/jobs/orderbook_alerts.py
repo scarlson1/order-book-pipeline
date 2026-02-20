@@ -332,6 +332,9 @@ class AlertRateLimiter(KeyedProcessFunction):
             else "unknown"
         )
         logger.info(f'Alert suppression ended for {key}')
+        # PyFlink timer callbacks are consumed via `yield from`; return
+        # an empty iterable when no records should be emitted.
+        return []
 
 
 class SpreadWideningJoinFunction(KeyedCoProcessFunction):
