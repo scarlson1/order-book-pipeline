@@ -19,7 +19,7 @@ from pyflink.common.serialization import SimpleStringSchema
 from pyflink.datastream.window import SlidingEventTimeWindows, TumblingProcessingTimeWindows
 from pyflink.datastream.functions import AggregateFunction
 
-from common.models import  OrderBookMetrics
+from common.models import OrderBookMetrics
 from config import settings
 from jobs.orderbook_alerts import parse_metrics
 
