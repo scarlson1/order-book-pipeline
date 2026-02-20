@@ -237,6 +237,23 @@ class BinanceWebSocketClient:
 
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
+    async def stop(self) -> None:
+        """Stop the WebSocket client gracefully."""
+        logger.info("Stopping WebSocket client...")
+        self._running = False
+        
+        # Cancel any pending tasks
+        for task in self._tasks:
+            if not task.done():
+                task.cancel()
+        
+        # Wait for tasks to complete cancellation
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+        
+        logger.info("WebSocket client stopped")
+
+
     
     async def __aenter__(self):
         """Context manager entry."""

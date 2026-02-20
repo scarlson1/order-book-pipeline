@@ -35,8 +35,8 @@ from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.time import Time
 from pyflink.common.typeinfo import Types
 
-from src.common.models import Alert, AlertType, OrderBookMetrics, Severity
-from src.config import settings
+from common.models import Alert, AlertType, OrderBookMetrics, Severity
+from config import settings
 
 # TODO: which parts need to be calculated from the windowed metrics ??
 
@@ -143,7 +143,7 @@ References:
 """
 
 # RichFunction -> provided open() and close() methods
-class ImbalanceFlipDetector(KeyedProcessFunction[str, OrderBookMetrics, Alert | None]):
+class ImbalanceFlipDetector(KeyedProcessFunction):
     """Detects sign changes in imbalance_ratio (buy pressure → sell pressure or vice-versa).
     
     This KeyedProcessFunction maintains keyed state to track the previous imbalance
@@ -525,7 +525,7 @@ def main():
                 ))
                 .aggregate(
                     SpreadAverageAggregateFunction(),
-                    accumulator_type=Types.TUPLE([Types.DOUBLE(), Types.INTEGER()]),
+                    accumulator_type=Types.TUPLE([Types.DOUBLE(), Types.INT()]),
                     output_type=Types.DOUBLE()
                 )
         )
@@ -559,7 +559,7 @@ def main():
         # remove alerts by symbol+type that occurred in the last minute (key_by partitions the suppression state)
         deduped_alerts = (
             all_alerts
-                .key_by(lambda a: f'{a['symbol']}_{a['alert_type']}')
+                .key_by(lambda a: f"{a['symbol']}_{a['alert_type']}")
                 .process(AlertRateLimiter(cooldown_ms=60_000))
         )
 

@@ -7,7 +7,7 @@
 import json
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.common.watermark_strategy import WatermarkStrategy
-from pyflink.common.time import Duration
+from pyflink.common.time import Duration, Time
 from pyflink.datastream.connectors.kafka import (
     KafkaSource,
     KafkaSink,
@@ -19,9 +19,9 @@ from pyflink.common.serialization import SimpleStringSchema
 from pyflink.datastream.window import SlidingEventTimeWindows, TumblingProcessingTimeWindows
 from pyflink.datastream.functions import AggregateFunction
 
-from src.common.models import  OrderBookMetrics
-from src.config import settings
-from jobs.orderbook_alert import parse_metrics
+from common.models import  OrderBookMetrics
+from config import settings
+from jobs.orderbook_alerts import parse_metrics
 
 # ===== Aggregate Functions ===== #
 
@@ -130,7 +130,7 @@ def main():
                 .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
                 .set_topics(settings.redpanda_topics['metrics'])
                 .set_group_id('flink-agg-processor')
-                .set_start_offsets(KafkaOffsetsInitializer.latest())
+                .set_starting_offsets(KafkaOffsetsInitializer.latest())
                 .set_value_only_deserializer(SimpleStringSchema())
                 .build()
         )
@@ -149,8 +149,10 @@ def main():
         # tumbling 1 minute windows per symbol
         tumble_stream = (
             metrics_stream
-                .window(TumblingProcessingTimeWindows.of(Duration.ofMinutes(1)))
+                .window(TumblingProcessingTimeWindows.of(Time.minutes(1)))
                 .aggregate(TumblingAggFunction())
+                # .window(TumblingProcessingTimeWindows.of(Duration.of_minutes(1)))
+                # .aggregate(TumblingAggFunction())
                 # .reduce()
         ) # need to group by window_start ?? need to create composite primary key in sink ??
 
@@ -158,7 +160,7 @@ def main():
         # sliding 5 minute windows every 30 seconds
         five_min_sliding_stream = (
             metrics_stream
-                .window(SlidingEventTimeWindows.of(Duration.ofMinutes(5), Duration.ofSeconds(30)))
+                .window(SlidingEventTimeWindows.of(Time.minutes(5), Time.seconds(30)))
                 .aggregate(SlidingAggFunction())
         )
         # https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/operators/windows/#working-with-window-results

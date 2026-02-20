@@ -23,7 +23,7 @@ Documentation:
 
 import asyncio
 from datetime import datetime, timezone
-from common.utils import setup_signal_handlers
+from src.common.utils import setup_signal_handlers
 from loguru import logger
 
 from src.common.redpanda_client import RedpandaProducer
@@ -34,18 +34,10 @@ from src.ingestion.orderbook_parser import OrderBookParser
 
 class IngestionService:
     """Ingestion service that publishes raw order book data to Redpanda.
-    
-    Responsibilities:
+
         - Manage WebSocket connection to Binance
         - Parse raw order book messages
         - Publish to Redpanda orderbook.raw topic
-        - Handle graceful shutdown
-    
-    NOT responsible for:
-        - Calculating metrics (Flink)
-        - Checking alerts (Flink)
-        - Writing to TimescaleDB (Flink consumer)
-        - Writing to Redis (Flink consumer)
     
     Example:
         >>> service = IngestionService()
@@ -132,9 +124,7 @@ class IngestionService:
             )
     
     async def start(self) -> None:
-        """Start the ingestion service.
-        
-        Initializes the Redpanda producer and WebSocket client,
+        """Start the ingestion service. Initializes the Redpanda producer and WebSocket client,
         then starts streaming data.
         """
         logger.info("=" * 50)
@@ -194,9 +184,6 @@ class IngestionService:
             f"Sent: {stats['messages_sent']}, "
             f"Failed: {stats['messages_failed']}"
         )
-
-
-
 
 
 async def main() -> None:

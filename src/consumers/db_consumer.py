@@ -80,9 +80,9 @@ class DatabaseConsumer:
         
         logger.info(
             f'DatabaseConsumer started - consuming from '
-            f'{settings.redpanda_topics['metrics']}, '
-            f'{settings.redpanda_topics['alerts']}, and '
-            f'{settings.redpanda_topics['windowed']}'
+            f"{settings.redpanda_topics['metrics']}, "
+            f"{settings.redpanda_topics['alerts']}, and "
+            f"{settings.redpanda_topics['windowed']}"
         )
         
         # Start consumption in background task

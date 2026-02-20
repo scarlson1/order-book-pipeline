@@ -33,6 +33,15 @@ RUN python -m pip install --upgrade pip; \
     pip3 install -r requirements.txt --no-cache-dir; \
     pip3 install -r requirements-flink.txt --no-cache-dir;
 
+
+RUN mkdir -p /opt/flink/checkpoints && \
+    chown -R flink:flink /opt/flink/checkpoints
+
+# copy over jobs
+COPY src/jobs/orderbook_alerts.py /opt/src/jobs/orderbook_alerts.py
+COPY src/jobs/orderbook_metrics.py /opt/src/jobs/orderbook_metrics.py
+COPY src/jobs/orderbook_windows.py /opt/src/jobs/orderbook_windows.py
+
 # download Flink connectors
 # Kafka Clients: https://mvnrepository.com/artifact/org.apache.kafka/kafka-clients
 # Flink JSON: https://mvnrepository.com/artifact/org.apache.flink/flink-json
@@ -45,6 +54,7 @@ RUN python -m pip install --upgrade pip; \
 # required to write from flink to Timescale: Flink JDBC connector + Postgres JDBC driver
 
 RUN \
+    wget -P /opt/flink/lib/ "https://repo.maven.apache.org/maven2/org/apache/kafka/kafka-clients/3.9.0/kafka-clients-3.9.0.jar" && \
     wget -P /opt/flink/lib/ "https://repo.maven.apache.org/maven2/org/apache/flink/flink-connector-kafka/${KAFKA_CONNECTOR_VERSION}/flink-connector-kafka-${KAFKA_CONNECTOR_VERSION}.jar" && \
     wget -P /opt/flink/lib/ "https://repo.maven.apache.org/maven2/org/apache/flink/flink-connector-jdbc-core/${JDBC_CONNECTOR_VERSION}/flink-connector-jdbc-core-${JDBC_CONNECTOR_VERSION}.jar" && \
     wget -P /opt/flink/lib/ "https://repo.maven.apache.org/maven2/org/apache/flink/flink-connector-jdbc-postgres/${JDBC_CONNECTOR_VERSION}/flink-connector-jdbc-postgres-${JDBC_CONNECTOR_VERSION}.jar" && \

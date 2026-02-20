@@ -87,26 +87,13 @@ services:
       /bin/bash -c "
       echo 'Creating Redpanda topics...'
 
-      rpk topic create orderbook.raw \
-        --brokers redpanda:9092 \
-        --partitions 3 \
-        --replicas 1 \
-        --topic-config retention.ms=3600000 \
-        --topic-config cleanup.policy=delete
+      rpk topic create orderbook.raw --brokers redpanda:9092 --partitions 3 --replicas 1 --topic-config retention.ms=3600000 --topic-config cleanup.policy=delete
 
-      rpk topic create orderbook.metrics \
-        --brokers redpanda:9092 \
-        --partitions 3 \
-        --replicas 1 \
-        --topic-config retention.ms=3600000 \
-        --topic-config cleanup.policy=delete
+      rpk topic create orderbook.metrics --brokers redpanda:9092 --partitions 3 --replicas 1 --topic-config retention.ms=3600000 --topic-config cleanup.policy=delete
 
-      rpk topic create orderbook.alerts \
-        --brokers redpanda:9092 \
-        --partitions 1 \
-        --replicas 1 \
-        --topic-config retention.ms=86400000 \
-        --topic-config cleanup.policy=delete
+      rpk topic create orderbook.metrics.windowed --brokers redpanda:9092 --partitions 3 --replicas 1 --topic-config retention.ms=3600000 --topic-config cleanup.policy=delete
+
+      rpk topic create orderbook.alerts --brokers redpanda:9092 --partitions 1 --replicas 1 --topic-config retention.ms=86400000 --topic-config cleanup.policy=delete
 
       echo 'Topics created:'
       rpk topic list --brokers redpanda:9092
@@ -143,34 +130,6 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    # environment:
-    #   POSTGRES_HOST: timescaledb
-    #   POSTGRES_PORT: 5432
-    #   POSTGRES_DB: orderbook
-    #   POSTGRES_USER: orderbook_user
-    #   POSTGRES_PASSWORD: orderbook_pass
-    #   REDIS_HOST: redis
-    #   REDIS_PORT: 6379
-    #   REDIS_PASSWORD: ''
-    #   REDPANDA_ENABLED: 'false'
-    #   REDPANDA_BOOTSTRAP_SERVERS: redpanda:9092
-    #   REDPANDA_TOPIC_PREFIX: orderbook
-    #   # Flink settings
-    #   FLINK_HOST: flink-jobmanager
-    #   FLINK_PARALLELISM: 1
-    #   # Binance WebSocket settings
-    #   BINANCE_WS_URL: wss://stream.binance.us:9443/ws
-    #   SYMBOLS: BTCUSDT,ETHUSDT,SOLUSDT
-    #   DEPTH_LEVELS: 20
-    #   UPDATE_SPEED: 100ms
-    #   # Metric calculation settings
-    #   CALCULATE_DEPTH: 10
-    #   ALERT_THRESHOLD: 0.7
-    #   # Logging settings
-    #   LOG_LEVEL: INFO
-    #   LOG_FILE: /app/logs/orderbook.log
-    #   # Application settings
-    #   ENVIRONMENT: development
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs
@@ -191,6 +150,8 @@ services:
         condition: service_healthy
       redpanda-init:
         condition: service_completed_successfully
+    env_file:
+      - .env
     environment:
       POSTGRES_HOST: timescaledb
       POSTGRES_PORT: 5432
@@ -219,6 +180,7 @@ services:
     platform: 'linux/amd64'
     hostname: 'jobmanager'
     command: jobmanager
+    # command: bash -c "mkdir -p /opt/flink/checkpoints && /opt/flink/bin/jobmanager.sh start"
     expose:
       - '6123'
     ports:
@@ -226,6 +188,8 @@ services:
     extra_hosts:
       - 'host.docker.internal:127.0.0.1' #// Linux
       - 'host.docker.internal:host-gateway' #// Access services on the host machine from within the Docker container
+    env_file:
+      - .env
     environment:
       - POSTGRES_URL=${POSTGRES_URL:-jdbc:postgresql://host.docker.internal:5432/postgres}
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
@@ -243,6 +207,7 @@ services:
     volumes:
       - flink_checkpoints:/opt/flink/checkpoints
       - ./src/:/opt/src
+      - ./:/opt/flink/usrlib
       # - ./src/jobs:/opt/flink/jobs # Mount your Flink jobs
     depends_on:
       redpanda:
@@ -270,6 +235,8 @@ services:
     extra_hosts:
       - 'host.docker.internal:127.0.0.1' #// Linux
       - 'host.docker.internal:host-gateway' #// Access services on the host machine from within the Docker container
+    env_file:
+      - .env
     environment:
       - |
         FLINK_PROPERTIES=
@@ -299,6 +266,8 @@ services:
         condition: service_healthy
     ports:
       - '8501:8501'
+    env_file:
+      - .env
     environment:
       POSTGRES_HOST: timescaledb
       POSTGRES_PORT: 5432
@@ -324,6 +293,8 @@ services:
       - timescaledb
     ports:
       - '3000:3000'
+    env_file:
+      - .env
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin

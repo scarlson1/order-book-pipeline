@@ -25,8 +25,8 @@ from pyflink.common import WatermarkStrategy, Duration
 from pyflink.common.serialization import SimpleStringSchema
 import json
 
-from src.config import settings
-from src.ingestion.metrics_calculator import calculate_metrics
+from config import settings
+from ingestion.metrics_calculator import calculate_metrics
 
 # TODO: parse into OrderbookMetrics and then back to json using .to_dict()
 
