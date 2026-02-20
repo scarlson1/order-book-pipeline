@@ -374,29 +374,36 @@ class RedpandaConsumer:
             logger.error('Redpanda consumer not connected')
             return
 
-        try:
-            # poll for messages without blocking event loop
-            message_batch = await asyncio.to_thread(
-                lambda: self.consumer.poll(timeout_ms=timeout_ms)
-            )
-            # message_batch is dict: {TopicPartition: [messages]}
-            for topic_partition, msgs in message_batch.items():
-                for msg in msgs:
-                    self._messages_consumed += 1
-                    yield msg
+        while not self._closed:
+            try:
+                # poll for messages without blocking event loop
+                message_batch = await asyncio.to_thread(
+                    lambda: self.consumer.poll(timeout_ms=timeout_ms)
+                )
+                # message_batch is dict: {TopicPartition: [messages]}
+                for topic_partition, msgs in message_batch.items():
+                    for msg in msgs:
+                        self._messages_consumed += 1
+                        yield msg
 
-            if not message_batch:
-                await asyncio.sleep(0.01)
+                # if no messages, yield control to event loop
+                if not message_batch:
+                    await asyncio.sleep(0.01)
 
-        except KeyboardInterrupt:
-            print("Consumption stopped by user.")
-        except Exception as e:
-            logger.error(f"Error consuming messages: {e}")
-            raise
-        finally:
-            self.consumer.close()
-            print("Consumer closed.")
+            except KeyboardInterrupt:
+                print("Consumption stopped by user.")
+            except Exception as e:
+                logger.error(f"Error consuming messages: {e}")
+                # Wait before retrying to avoid tight error loop
+                await asyncio.sleep(1)
+                # Don't raise - continue trying to consume
+            #     raise
+            # finally:
+            #     self.consumer.close()
+            #     print("Consumer closed.")
+        logger.debug(f"Consume loop exited for consumer '{self.group_id}'")
 
+        
     async def commit(self) -> None:
         """Manually commit current offsets.
         

@@ -23,10 +23,11 @@ from pyflink.datastream.connectors.kafka import (
 )
 from pyflink.common import WatermarkStrategy, Duration
 from pyflink.common.serialization import SimpleStringSchema
+from pyflink.common.typeinfo import Types
 import json
 
-from config import settings
-from ingestion.metrics_calculator import calculate_metrics
+from src.config import settings
+from src.ingestion.metrics_calculator import calculate_metrics
 
 # TODO: parse into OrderbookMetrics and then back to json using .to_dict()
 
@@ -54,7 +55,7 @@ def main():
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/python/datastream_tutorial/
     env = StreamExecutionEnvironment.get_execution_environment()
     env.enable_checkpointing(10 * 1000)
-    env.set_parallelism(2)
+    env.set_parallelism(settings.flink_parallelism)
     
     # Configure Kafka/Redpanda source
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/
@@ -126,7 +127,7 @@ def main():
     # )
     
     # Serialize and sink
-    metrics_stream.map(json.dumps).sink_to(metrics_sink)
+    metrics_stream.map(json.dumps, output_type=Types.STRING()).sink_to(metrics_sink)
     # alerts_stream.map(json.dumps).sink_to(alerts_sink) # (moved to orderbook_alert)
     
     # Execute

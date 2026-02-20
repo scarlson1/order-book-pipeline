@@ -55,8 +55,9 @@ def parse_metrics(raw_message: str) -> OrderBookMetrics | None:
         print(f"Validation Error:\n{e.json(indent=4)}")
         return None
 
-
-# ===== Alert Checks ===== #
+def get_symbol(metric: OrderBookMetrics | dict) -> str:
+    """Extract symbol from either model or dict payload."""
+    return metric["symbol"] if isinstance(metric, dict) else metric.symbol
 
 
 def check_extreme_imbalance(metrics: OrderBookMetrics) -> Alert | None:
@@ -76,7 +77,8 @@ def check_extreme_imbalance(metrics: OrderBookMetrics) -> Alert | None:
         - Consider emitting both BID and ASK side context in the alert
               payload (best_bid / best_ask from metrics).
     """
-    imbalance = abs(metrics.get("imbalance_ratio", 0))
+    # imbalance = abs(metrics.get("imbalance_ratio", 0))
+    imbalance = abs(metrics.imbalance_ratio if metrics.imbalance_ratio else 0)
 
     if imbalance >= settings.alert_threshold_medium:
         severity = (
@@ -222,7 +224,7 @@ class ImbalanceFlipDetector(KeyedProcessFunction):
             direction = "BUY→SELL" if prev_imbalance > 0 else "SELL→BUY"
             
             alert = Alert(
-                symbol=value.get('symbol') if isinstance(value, dict) else value.symbol,
+                symbol=get_symbol(value),
                 alert_type=AlertType.IMBALANCE_FLIP,
                 severity=Severity.MEDIUM,
                 message=f"Imbalance flip detected: {direction}",
@@ -314,7 +316,7 @@ class AlertRateLimiter(KeyedProcessFunction):
         timer_timestamp = ctx.timer_service().current_processing_time() + self.cooldown_ms
         ctx.timer_service().register_processing_time_timer(timer_timestamp)
     
-    def on_timer(self, timestamp: int, ctx: 'KeyedProcessFunction.OnTimerContext', out):
+    def on_timer(self, timestamp: int, ctx: 'KeyedProcessFunction.OnTimerContext'):
         """
         This is the timer callback that clears the suppression flag,
         allowing new alerts to pass through for this key.
@@ -322,11 +324,14 @@ class AlertRateLimiter(KeyedProcessFunction):
         Args:
             timestamp: When the timer fired (processing time in ms)
             ctx: OnTimerContext providing additional timer-specific methods
-            out: Output collector for emitting results (not used here)
         """
         self.suppressed_state.clear()
-        
-        logger.info(f'Alert suppression ended for {ctx.getCurrentKey()}')
+        key = (
+            ctx.get_current_key() if hasattr(ctx, "get_current_key")
+            else ctx.getCurrentKey() if hasattr(ctx, "getCurrentKey")
+            else "unknown"
+        )
+        logger.info(f'Alert suppression ended for {key}')
 
 
 class SpreadWideningJoinFunction(KeyedCoProcessFunction):
@@ -366,7 +371,7 @@ class SpreadWideningJoinFunction(KeyedCoProcessFunction):
     # process windowed average stream (right input)
     def process_element2(self, value, ctx):
         # The windowed stream outputs (symbol, average_spread)
-        symbol = value[0] if isinstance(value, tuple) else value.get('symbol')
+        # symbol = value[0] if isinstance(value, tuple) else get_symbol(value) # value.get('symbol')
         avg_spread = value[1] if isinstance(value, tuple) else value
 
         # update state for this symbol
@@ -425,18 +430,31 @@ class VelocitySpikeDetector(KeyedProcessFunction):
 # ===== Aggregate Functions ===== #
 
 class SpreadAverageAggregateFunction(AggregateFunction):
-    def create_accumulator(self) -> Tuple[float, int]:
-        return 0.0, 0 # [spread_bps, count]
+    """Compute rolling average spread and keep symbol in the output."""
 
-    def add(self, value: OrderBookMetrics, accumulator: Tuple[float, int]) -> Tuple[float, int]:
-        spread_bps = value.spread_bps
-        return accumulator[0] + spread_bps, accumulator[1] + 1
+    def create_accumulator(self) -> Tuple[str, float, int]:
+        return "", 0.0, 0  # [symbol, spread_sum, count]
 
-    def get_result(self, accumulator: Tuple[int, int]) -> float:
-        return accumulator[0] / accumulator[1]
+    def add(
+        self,
+        value: OrderBookMetrics,
+        accumulator: Tuple[str, float, int]
+    ) -> Tuple[str, float, int]:
+        symbol = value.symbol or accumulator[0]
+        return symbol, accumulator[1] + value.spread_bps, accumulator[2] + 1
 
-    def merge(self, a: Tuple[float, int], b: Tuple[float, int]) -> Tuple[float, int]:
-        return a[0] + b[0], a[1] + b[1]
+    def get_result(self, accumulator: Tuple[str, float, int]) -> Tuple[str, float]:
+        if accumulator[2] == 0:
+            return accumulator[0], 0.0
+        return accumulator[0], accumulator[1] / accumulator[2]
+
+    def merge(
+        self,
+        a: Tuple[str, float, int],
+        b: Tuple[str, float, int]
+    ) -> Tuple[str, float, int]:
+        symbol = a[0] or b[0]
+        return symbol, a[1] + b[1], a[2] + b[2]
 
 
 # ===== Main Flink Job ===== #
@@ -491,7 +509,8 @@ def main():
             )
             .map(parse_metrics)
             .filter(lambda x: x is not None)
-            .key_by(lambda a: a['symbol'])
+            .key_by(get_symbol)
+            # .key_by(lambda a: a['symbol'])
         )
 
         # -----------------------------------------------------------------
@@ -525,13 +544,13 @@ def main():
                 ))
                 .aggregate(
                     SpreadAverageAggregateFunction(),
-                    accumulator_type=Types.TUPLE([Types.DOUBLE(), Types.INT()]),
-                    output_type=Types.DOUBLE()
+                    accumulator_type=Types.TUPLE([Types.STRING(), Types.DOUBLE(), Types.INT()]),
+                    output_type=Types.TUPLE([Types.STRING(), Types.DOUBLE()])
                 )
         )
 
         raw_keyed = metrics_stream
-        windowed_keyed = windowed.key_by(lambda x: x[0] if isinstance(x, tuple) else x.get('symbol'))
+        windowed_keyed = windowed.key_by(lambda x: x[0])
 
         connected = raw_keyed.connect(windowed_keyed) 
 
@@ -559,7 +578,8 @@ def main():
         # remove alerts by symbol+type that occurred in the last minute (key_by partitions the suppression state)
         deduped_alerts = (
             all_alerts
-                .key_by(lambda a: f"{a['symbol']}_{a['alert_type']}")
+                .key_by(lambda a: f"{a.symbol}_{a.alert_type}")
+                # .key_by(lambda a: f"{a['symbol']}_{a['alert_type']}")
                 .process(AlertRateLimiter(cooldown_ms=60_000))
         )
 
@@ -584,7 +604,10 @@ def main():
         )
 
         # Serialize and sink
-        deduped_alerts.map(lambda a: json.dumps(a.to_dict())).sink_to(alerts_sink)
+        deduped_alerts.map(
+            lambda a: json.dumps(a.to_dict()),
+            output_type=Types.STRING()
+        ).sink_to(alerts_sink)
 
         # Execute
         env.execute("OrderBook Alerts Processor")

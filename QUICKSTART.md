@@ -217,3 +217,28 @@ pytest
 ```
 
 Happy coding! 🎉
+
+---
+
+### Helpful Debug Commands
+
+```bash
+# 1. Flink job status
+docker compose exec flink-jobmanager flink list
+
+# 2. Flink logs
+docker compose logs flink-taskmanager | tail -100
+
+# 3. Consumer logs
+docker compose logs consumers | tail -50
+
+# 4. Topic status
+docker compose exec redpanda rpk topic list
+docker compose exec redpanda rpk group list
+
+# Check if topics have messages
+docker compose exec redpanda rpk topic consume orderbook.raw --num 1
+docker compose exec redpanda rpk topic consume orderbook.metrics --num 1
+docker compose exec redpanda rpk topic consume orderbook.alerts --num 1
+docker compose exec redpanda rpk topic consume orderbook.metrics.windowed --num 1
+```

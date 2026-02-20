@@ -78,13 +78,13 @@ flink-jobs:
 	docker-compose exec flink-jobmanager flink list
 
 flink-metrics:
-	PYTHONPATH=/opt docker compose exec -e PYTHONPATH=/opt flink-jobmanager ./bin/flink run -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d
+	docker compose exec -e PYTHONPATH=/opt:/opt/src flink-jobmanager ./bin/flink run -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d
 
 flink-alerts:
-	docker compose exec flink-jobmanager ./bin/flink run -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d
+	docker compose exec -e PYTHONPATH=/opt:/opt/src flink-jobmanager ./bin/flink run -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d
 
 flink-windows:
-	docker compose exec flink-jobmanager ./bin/flink run -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d
+	docker compose exec -e PYTHONPATH=/opt:/opt/src flink-jobmanager ./bin/flink run -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d
 
 # Stop services
 down:

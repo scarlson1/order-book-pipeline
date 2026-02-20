@@ -161,9 +161,22 @@ class DatabaseConsumer:
             await self._check_metrics_flush()
 
         elif topic == settings.redpanda_topics['windowed']:
+            # Skip malformed legacy payloads so one poison-pill message
+            # does not block the consumer group forever.
+            if not self._is_valid_windowed_message(value):
+                logger.warning(f"Skipping malformed windowed message: {value}")
+                await self.consumer.commit()
+                return
             # Windowed: add to batch
             self._add_to_windowed_batch(value)
             await self._check_windowed_flush()
+
+    def _is_valid_windowed_message(self, value: dict) -> bool:
+        """Validate minimum schema needed for DB insertion."""
+        required = {"symbol", "window_type", "sample_count"}
+        if not isinstance(value, dict):
+            return False
+        return required.issubset(value.keys())
 
     def _add_to_metrics_batch(self, value: dict) -> None:
         """Add metrics to batch."""
