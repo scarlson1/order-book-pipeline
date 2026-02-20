@@ -534,3 +534,7 @@ For issues or questions, please check:
 - Docker logs: `docker-compose logs`
 - Database status: `docker-compose exec timescaledb pg_isready`
 - Service health: `docker-compose ps`
+
+## Credits
+
+- [Streamlit Theme](https://github.com/jmedia65/awesome-streamlit-themes)
