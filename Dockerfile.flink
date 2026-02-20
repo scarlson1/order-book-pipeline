@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 flink:2.0.1-scala_2.12-java17
+FROM flink:2.0.1-scala_2.12-java17
 # https://hub.docker.com/_/flink
 # flink connectors not available for 2.2 --> using 2.0
 
@@ -37,10 +37,10 @@ RUN python -m pip install --upgrade pip; \
 RUN mkdir -p /opt/flink/checkpoints && \
     chown -R flink:flink /opt/flink/checkpoints
 
-# copy over jobs
-COPY src/jobs/orderbook_alerts.py /opt/src/jobs/orderbook_alerts.py
-COPY src/jobs/orderbook_metrics.py /opt/src/jobs/orderbook_metrics.py
-COPY src/jobs/orderbook_windows.py /opt/src/jobs/orderbook_windows.py
+# # copy over jobs
+# COPY src/jobs/orderbook_alerts.py /opt/src/jobs/orderbook_alerts.py
+# COPY src/jobs/orderbook_metrics.py /opt/src/jobs/orderbook_metrics.py
+# COPY src/jobs/orderbook_windows.py /opt/src/jobs/orderbook_windows.py
 
 # download Flink connectors
 # Kafka Clients: https://mvnrepository.com/artifact/org.apache.kafka/kafka-clients

@@ -177,10 +177,9 @@ services:
     image: orderbook-flink:latest
     container_name: orderbook_flink_jobmanager
     pull_policy: never
-    platform: 'linux/amd64'
+    # platform: 'linux/amd64'
     hostname: 'jobmanager'
     command: jobmanager
-    # command: bash -c "mkdir -p /opt/flink/checkpoints && /opt/flink/bin/jobmanager.sh start"
     expose:
       - '6123'
     ports:
@@ -227,7 +226,7 @@ services:
     image: orderbook-flink:latest # use image build above in flink-jobmanager
     container_name: orderbook_flink_taskmanager
     pull_policy: never
-    platform: 'linux/amd64'
+    # platform: 'linux/amd64'
     command: taskmanager --taskmanager.registration.timeout 5 min
     expose:
       - '6121'
@@ -252,6 +251,33 @@ services:
       - flink-jobmanager
     networks:
       - orderbook_network
+
+  # Flink Job Submitter - automatically submits jobs on startup
+  flink-job-submitter:
+    image: orderbook-flink:latest
+    container_name: orderbook_flink_job_submitter
+    # platform: 'linux/amd64'
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    volumes:
+      - ./src:/opt/src
+    environment:
+      - FLINK_JOBMANAGER_HOST=flink-jobmanager
+    entrypoint: >
+      bash -c "
+        echo 'Waiting for Flink JobManager to be ready...' &&
+        until curl -sf http://flink-jobmanager:8081/overview > /dev/null; do
+          sleep 2;
+        done &&
+        echo 'JobManager ready! Submitting jobs...' &&
+        /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d &&
+        /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d &&
+        /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d &&
+        echo 'All jobs submitted!' &&
+        tail -f /dev/null
+      "
+    restart: 'no'
 
   # Streamlit dashboard
   dashboard:

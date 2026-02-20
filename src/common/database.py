@@ -300,6 +300,18 @@ class DatabaseClient:
             """, symbol, limit)
             return [dict(row) for row in rows]
 
+    async def fetch_multiple_symbols_metrics(self) -> List[Dict]:
+        """Fetch most recent metric for each symbol"""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT DISTINCT ON (symbol)
+                    time, symbol, mid_price, imbalance_ratio,
+                       weighted_imbalance, spread_bps, bid_volume, ask_volume
+                FROM orderbook_metrics
+                ORDER BY symbol, time DESC
+            """)
+            return [dict(row) for row in rows]
+
     async def fetch_time_series(
         self,
         symbol: str,
