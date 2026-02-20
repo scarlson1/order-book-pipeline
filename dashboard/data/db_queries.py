@@ -159,6 +159,45 @@ class DatabaseQueries:
 
         return await self.db.query(query, *params)
 
+    async def fetch_windowed_aggregates(
+        self,
+        symbol: str,
+        window_type: str = '5m_sliding',
+        limit: int = 12  # Last hour of 5-min windows
+    ):
+        '''
+            Flink Window Output
+            Use Case: Display rolling averages on charts
+            Strategy: Hybrid - Redis for latest window, TimescaleDB for history
+        '''
+        # Get latest window from Redis
+        latest = await self.redis.get_windowed(symbol, window_type, limit)
+        
+        
+        # Get historical windows from database
+        async with self.db.pool.acquire() as conn:
+            historical = await conn.execute("""
+                SELECT *
+                FROM orderbook_metrics_windowed
+                WHERE symbol = $1
+                AND window_type = $2
+                ORDER BY window_end DESC
+                LIMIT $3
+            """, symbol, window_type, limit)
+        
+        # Combine (latest might duplicate most recent historical)
+        results = []
+        if latest:
+            results.append(json.loads(latest))
+        
+        # Deduplicate by window_end timestamp
+        seen_timestamps = {r['window_end'] for r in results}
+        for h in historical:
+            if h['window_end'] not in seen_timestamps:
+                results.append(h)
+        
+        return results[:limit]
+
 # TODO: understand where this value is coming from ??
 # what's summary stats referring to vs windowed aggregates
 async def fetch_summary_stats(symbol: str, window: str = '5m') -> dict:
@@ -181,16 +220,6 @@ async def fetch_summary_stats(symbol: str, window: str = '5m') -> dict:
 
     return None
 
-# **Redis Key Pattern**:
-# ```
-# orderbook:stats:5m:BTCUSDT → {
-#     "avg_imbalance": 0.35,
-#     "avg_spread": 2.5,
-#     "total_volume": 15000.0,
-#     "sample_count": 300,
-#     "window_start": "2024-01-01T12:00:00Z",
-#     "window_end": "2024-01-01T12:05:00Z"
-# }
 
 async def fetch_windowed_aggregates(
     symbol: str,
@@ -205,12 +234,7 @@ async def fetch_windowed_aggregates(
     redis = get_redis_client()
     db = get_db_client()
     # Get latest window from Redis
-    # latest_key = f"orderbook:windowed:{window_type}:{symbol}:latest"
-    # TODO: need to add windowed key & methods to RedisClient
-    # latest_key = f'orderbook:windowed:{window_type}:{symbol}:latest'
-    # latest_key = redis._windowed_key(symbol, window_type)
-    # latest = await redis.client.get(latest_key)
-    latest = await redis.get_windowed(symbol, window_type)
+    latest = await redis.get_windowed(symbol, window_type, limit)
     
     
     # Get historical windows from database

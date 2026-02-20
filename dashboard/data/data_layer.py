@@ -38,3 +38,6 @@ class DataLayer:
             return cached
 
         return await self.db.fetch_alerts(symbol, limit, since)
+
+    async def get_windowed(self, symbol: str, window_type: str = '5m_sliding', limit: int = 12):
+        return await self.db.fetch_windowed_aggregates(symbol, window_type, limit)

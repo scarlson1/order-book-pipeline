@@ -1,7 +1,7 @@
 import asyncio
 from src.common.utils import setup_signal_handlers
 from src.consumers.db_consumer import DatabaseConsumer
-from consumers.redis_consumer import RedisConsumer
+from src.consumers.redis_consumer import RedisConsumer
 from loguru import logger
 
 async def main():

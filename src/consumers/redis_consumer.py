@@ -2,9 +2,9 @@ import asyncio
 from typing import Optional
 from loguru import logger
 
-from common.redis_client import RedisClient
-from common.redpanda_client import RedpandaConsumer
-from config import settings
+from src.common.redis_client import RedisClient
+from src.common.redpanda_client import RedpandaConsumer
+from src.config import settings
 
 
 class RedisConsumer:
