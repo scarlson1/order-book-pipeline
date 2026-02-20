@@ -9,10 +9,6 @@ from datetime import datetime
 from loguru import logger
 from src.config import settings
 
-# TODO: Implement database client
-# - retry logic on failures
-# - Error handling
-
 class DatabaseClient:
     """Async PostgreSQL/TimescaleDB client.
     
@@ -195,6 +191,91 @@ class DatabaseClient:
                 alert.get('mid_price'),
                 alert.get('imbalance_ratio')
             )
+
+    # ====== WINDOWED METRICS METHODS ====== #
+
+    async def insert_batch_windowed_metrics(self, windowed_list: List[Dict]) -> None:
+        """Insert batch of windowed metrics efficiently.
+        
+        Args:
+            windowed_list: List of windowed metric dictionaries
+        """
+        if not windowed_list:
+            return
+        
+        records = [
+            (
+                w['window_end'],  # time column
+                w['symbol'],
+                w['window_type'],
+                w['window_start'],
+                w['window_end'],
+                w['window_duration_seconds'],
+                w.get('avg_imbalance'),
+                w.get('min_imbalance'),
+                w.get('max_imbalance'),
+                w.get('avg_spread_bps'),
+                w.get('min_spread_bps'),
+                w.get('max_spread_bps'),
+                w.get('avg_bid_volume'),
+                w.get('avg_ask_volume'),
+                w.get('avg_total_volume'),
+                w.get('total_bid_volume'),
+                w.get('total_ask_volume'),
+                w.get('total_volume'),
+                w['sample_count'],
+                w.get('window_velocity')
+            )
+            for w in windowed_list
+        ]
+        
+        columns = [
+            'time', 'symbol', 'window_type', 'window_start', 'window_end', 'window_duration_seconds',
+            'avg_imbalance', 'min_imbalance', 'max_imbalance',
+            'avg_spread_bps', 'min_spread_bps', 'max_spread_bps',
+            'avg_bid_volume', 'avg_ask_volume', 'avg_total_volume',
+            'total_bid_volume', 'total_ask_volume', 'total_volume',
+            'sample_count', 'window_velocity'
+        ]
+        
+        async with self.pool.acquire() as conn:
+            await conn.copy_records_to_table(
+                'orderbook_metrics_windowed',
+                records=records,
+                columns=columns
+            )
+        
+        logger.debug(f"Inserted batch of {len(windowed_list)} windowed metrics")
+
+
+    async def fetch_latest_windowed_metrics(
+        self,
+        symbol: str,
+        window_type: str = '5m_sliding'
+    ) -> Optional[Dict]:
+        """Fetch the most recent windowed metrics for a symbol.
+        
+        Args:
+            symbol: Trading symbol
+            window_type: Window type ('1m_tumbling' or '5m_sliding')
+            
+        Returns:
+            Dictionary with windowed metrics or None
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT time, symbol, window_type, window_start, window_end,
+                       avg_imbalance, avg_spread_bps, avg_total_volume,
+                       sample_count, window_velocity
+                FROM orderbook_metrics_windowed
+                WHERE symbol = $1 AND window_type = $2
+                ORDER BY time DESC
+                LIMIT 1
+            """, symbol, window_type)
+            
+            return dict(row) if row else None
+
+    # ===== STATS METHODS ===== #
 
     async def fetch_recent_metrics(self, symbol: str, limit: int = 100) -> List[Dict]:
         """Fetch recent metrics for a symbol.

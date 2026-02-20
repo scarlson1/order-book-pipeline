@@ -17,12 +17,13 @@ Apache Flink                    ← Stream processing
   ├── Alert detection
   └── Complex event patterns
       ↓
-Redpanda (orderbook.processed / orderbook.alerts)
+Redpanda (orderbook.metrics / orderbook.alerts)
       ↓
   Consumers
   ├── TimescaleDB               ← Persistent storage
   ├── Redis                     ← Low-latency cache
-  └── Streamlit Dashboard       ← Visualization
+      ↓
+  └── Streamlit Dashboard       ← Visualization (reads from DB/redis)
 ```
 
 ## Features
@@ -30,7 +31,7 @@ Redpanda (orderbook.processed / orderbook.alerts)
 - **Real-time streaming** from Binance WebSocket API
 - **Redpanda streaming platform** - Kafka-compatible message broker for scalable data pipelines
 - **Multiple metrics**: Imbalance ratio, weighted imbalance, spread analysis, VTOB ratio
-- **Intelligent alerts**: Extreme imbalance, imbalance flips, spread widening
+- **Intelligent alerts**: Extreme imbalance, imbalance flips, spread widening (real-time)
 - **Time-series storage** with TimescaleDB for historical analysis
 - **Redis caching** for ultra-low latency reads
 - **Interactive dashboard** with Streamlit
@@ -44,45 +45,19 @@ Redpanda (orderbook.processed / orderbook.alerts)
 - 4GB+ RAM available
 - Ports available: 5432, 6379, 8501 (and optionally 3000, 5050, 9092)
 
-**Note:** This project uses [uv](https://github.com/astral-sh/uv) for ultra-fast Python package installation. It's automatically installed in the Docker containers for 10-100x faster builds!
-
-### 1. Clone and Setup
+### Clone and Setup
 
 ```bash
 # Create project directory
-mkdir orderbook-monitor
-cd orderbook-monitor
+git clone https://github.com/scarlson1/order-book-pipeline.git
+cd order-book-pipeline
 
-# Copy the docker-compose.yml and other files here
-# (All files should be in the root directory)
-
-# Create environment file
+# Create environment file (and update as necessary)
 cp .env.example .env
-
-# Edit .env if you want to change any settings
-# Default values work fine for getting started
+mkdir -p logs
 ```
 
-### 2. Create Required Directories
-
-```bash
-mkdir -p src/ingestion src/common dashboard logs
-```
-
-### 3. Start Core Services
-
-```bash
-# Start TimescaleDB and Redis only
-docker-compose up -d timescaledb redis
-
-# Wait for services to be healthy (about 10-15 seconds)
-docker-compose ps
-
-# Verify database is initialized
-docker-compose logs timescaledb | grep "database system is ready"
-```
-
-### 4. Start All Services
+### Start All Services
 
 ```bash
 # Start everything
@@ -95,18 +70,9 @@ docker-compose logs -f
 docker-compose ps
 ```
 
-### 5. Access the Dashboard
-
-Open your browser to:
-
-- **Streamlit Dashboard**: http://localhost:8501
-
-### 6. Optional Services
+### Optional Services
 
 ```bash
-# Start with Redpanda (recommended for production-grade streaming)
-docker-compose --profile with-redpanda up -d
-
 # Start with Grafana
 docker-compose --profile with-grafana up -d
 
@@ -114,16 +80,18 @@ docker-compose --profile with-grafana up -d
 docker-compose --profile with-pgadmin up -d
 
 # Start everything
-docker-compose --profile with-redpanda --profile with-grafana --profile with-pgadmin up -d
+docker-compose --profile with-grafana --profile with-pgadmin up -d
 ```
 
-Access optional services:
+### Access the Dashboard
 
-- **Redpanda Console**: http://localhost:8080 (when with-redpanda profile is enabled)
-- **Grafana**: http://localhost:3000 (admin/admin)
-- **pgAdmin**: http://localhost:5050 (admin@orderbook.com/admin)
+Open your browser to:
 
-**Note:** While Redpanda is optional for initial setup, it's highly recommended for production deployments to enable scalable, distributed data processing.
+- **Streamlit Dashboard**: http://localhost:8501
+- **Flink Dashboard**: http://localhost:8081
+- **RedPanda Dashboard**: http://localhost:8080/overview
+- **pgAdmin** (optional): http://localhost:5050 (admin@orderbook.com/admin)
+- **Grafana** (optional): http://localhost:3000 (admin/admin)
 
 ## Docker Compose Profiles
 

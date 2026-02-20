@@ -188,7 +188,10 @@ class RedisConsumer:
             "max_imb": 0.7,
             "avg_spread": 5.2,
             "avg_volume": 100000,
-            "sample_count": 100
+            "sample_count": 100,
+            "window_type": '5m_sliding',
+            "window_start": "2024-01-01T12:00:00Z",
+            "window_end": "2024-01-01T12:05:00Z"
         }
         
         Caches statistics with 300s TTL.
@@ -203,6 +206,8 @@ class RedisConsumer:
         if not symbol:
             logger.warning('Statistics message missing "symbol" field')
             return
+
+
 
         # Cache statistics with 300s TTL
         await self.redis.cache_statistics(

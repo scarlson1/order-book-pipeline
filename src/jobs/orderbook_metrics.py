@@ -23,12 +23,12 @@ from pyflink.datastream.connectors.kafka import (
 )
 from pyflink.common import WatermarkStrategy, Duration
 from pyflink.common.serialization import SimpleStringSchema
-# from pyflink.datastream.window import TumblingEventTimeWindows, SlidingEventTimeWindows
-# from pyflink.common.time import Time
 import json
 
 from src.config import settings
 from src.ingestion.metrics_calculator import calculate_metrics
+
+# TODO: parse into OrderbookMetrics and then back to json using .to_dict()
 
 # TODO: add notes to README about offset strategy ('latest' & run batch to fill gaps ??)
 # parse with OrderBookMetrics to use built in calc methods (mid-price, spread, etc.) ??

@@ -98,51 +98,6 @@ def check_extreme_imbalance(metrics: OrderBookMetrics) -> Alert | None:
 
     return None
 
-
-def check_velocity_spike(metrics: dict) -> dict | None:
-    """Emit an alert when the rate of change of imbalance_ratio exceeds the threshold.
-
-    Velocity = |current_imbalance − previous_imbalance| / Δt.  A sliding
-    window is used to compute the rate of change over
-    `settings.rolling_window_seconds` (default 60 s).
-
-    Args:
-        metrics: Parsed OrderBookMetrics dictionary.
-
-    Returns:
-        Alert dictionary on a velocity spike, or None.
-
-    TODO:
-        - [ ] Use a sliding event-time window (same pattern as
-              `check_spread_widening`) to compute Δimbalance / Δt per symbol.
-              Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/datastream/operators/windows/#sliding-windows
-
-        - [ ] Alternatively, use `imbalance_velocity` if it is already
-              populated by the upstream metrics job (see OrderBookMetrics in
-              src/common/models.py).  If so, this check reduces to a simple
-              threshold comparison and no window is needed here.
-
-        - [ ] Implement a `VelocityAggregateFunction` (or reuse keyed state
-              in a `KeyedProcessFunction`) that tracks the first and last
-              imbalance values within the window and divides by elapsed time.
-              Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/datastream/operators/windows/#aggregatefunction
-
-        - [ ] Threshold comparison using `settings.velocity_threshold` (default 0.05):
-              ```python
-              if abs(velocity) > settings.velocity_threshold:
-                  return { 'alert_type': 'VELOCITY_SPIKE', ... }
-              ```
-              Ref: src/config.py → Settings.velocity_threshold
-
-        - [ ] Window size should be driven by `settings.rolling_window_seconds`:
-              ```python
-              Time.seconds(settings.rolling_window_seconds)
-              ```
-    """
-    # TODO: implement — placeholder until velocity window is wired up
-    pass
-
-
 # ===== KeyedProcessFunctions ===== #
 
 """

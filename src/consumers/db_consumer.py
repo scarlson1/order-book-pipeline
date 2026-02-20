@@ -13,30 +13,33 @@ from src.config import settings
 # alerts idempotent ??
 
 class DatabaseConsumer:
-    """Consumes metrics and alerts from Redpanda and writes to TimescaleDB.
+    """Consumes metrics, alerts, and windowed data from Redpanda and writes to TimescaleDB.
     
     Features:
     - Batch inserts for high-volume metrics (every 100 msgs OR 1 second)
+    - Batch inserts for windowed metrics (every 50 msgs OR 2 seconds)
     - Immediate inserts for low-volume alerts
     - Manual offset commit AFTER successful DB writes
     - Graceful shutdown with batch flush
     - Error handling for bad messages
     
     Message Flow:
-        Redpanda (orderbook.metrics) ─┬─→ Batch → TimescaleDB → Commit offset
-                                      │
-        Redpanda (orderbook.alerts) -─┴─→ Immediate → TimescaleDB
+        Redpanda (orderbook.metrics) ──────┬─→ Batch → TimescaleDB → Commit
+        Redpanda (orderbook.alerts) ───────┼─→ Immediate → TimescaleDB → Commit
+        Redpanda (orderbook.metrics.windowed) ─┴─→ Batch → TimescaleDB → Commit
     
     Expected Load:
     - 3 symbols × 600 messages/min = 1,800 metrics/min
-    - Batching: 100 msgs/batch = ~18 batches/min
+    - 3 symbols × 3 windows/min = 9 windowed/min
+    - Variable alerts (~0-30/min)
     """
 
     def __init__(self):
         self.consumer = RedpandaConsumer(
             topics=[
                 settings.redpanda_topics['metrics'],
-                settings.redpanda_topics['alerts']
+                settings.redpanda_topics['alerts'],
+                settings.redpanda_topics['windowed']
             ],
             group_id='db-writer',
             auto_commit=False,  # Manual commit after successful DB write
@@ -44,11 +47,17 @@ class DatabaseConsumer:
         )
         self.db = DatabaseClient()
         
-        # batch state
-        self._batch: list[dict] = []
-        self._batch_max_size = 100
-        self._batch_timeout_seconds = 1.0
-        self._last_flush_time = datetime.datetime.now(datetime.timezone.utc)
+        # Metrics batch state
+        self._metrics_batch: list[dict] = []
+        self._metrics_batch_max_size = 100
+        self._metrics_batch_timeout_seconds = 1.0
+        self._metrics_last_flush_time = datetime.datetime.now(datetime.timezone.utc)
+        
+        # Windowed batch state (separate batch for windowed data)
+        self._windowed_batch: list[dict] = []
+        self._windowed_batch_max_size = 50  # Smaller batch (less frequent)
+        self._windowed_batch_timeout_seconds = 2.0
+        self._windowed_last_flush_time = datetime.datetime.now(datetime.timezone.utc)
         
         # state
         self._running = False
@@ -70,9 +79,10 @@ class DatabaseConsumer:
         )
         
         logger.info(
-            f"DatabaseConsumer started - consuming from "
-            f"{settings.redpanda_topics['metrics']} and "
-            f"{settings.redpanda_topics['alerts']}"
+            f'DatabaseConsumer started - consuming from '
+            f'{settings.redpanda_topics['metrics']}, '
+            f'{settings.redpanda_topics['alerts']}, and '
+            f'{settings.redpanda_topics['windowed']}'
         )
         
         # Start consumption in background task
@@ -94,10 +104,14 @@ class DatabaseConsumer:
             except asyncio.CancelledError:
                 pass
         
-        # Flush any remaining batch
-        if self._batch:
-            logger.info(f"Flushing final batch of {len(self._batch)} metrics")
-            await self._flush_batch()
+        # Flush any remaining batches
+        if self._metrics_batch:
+            logger.info(f"Flushing final metrics batch of {len(self._metrics_batch)}")
+            await self._flush_metrics_batch()
+        
+        if self._windowed_batch:
+            logger.info(f"Flushing final windowed batch of {len(self._windowed_batch)}")
+            await self._flush_windowed_batch()
         
         # Close connections (commits offsets)
         await asyncio.gather(
@@ -132,8 +146,7 @@ class DatabaseConsumer:
     async def _process_message(self, msg) -> None:
         """Process a single message from Redpanda.
         
-        Args:
-            msg: ConsumerRecord from kafka-python-ng
+            Args: msg: ConsumerRecord from kafka-python-ng
         """
         topic = msg.topic
         value = msg.value
@@ -144,109 +157,142 @@ class DatabaseConsumer:
             
         elif topic == settings.redpanda_topics['metrics']:
             # Metrics: add to batch
-            self._add_to_batch(value)
-            
-            # Check if we should flush
-            await self._check_flush()
+            self._add_to_metrics_batch(value)
+            await self._check_metrics_flush()
 
-    def _add_to_batch(self, value: dict) -> None:
-        """Add metrics to batch.
+        elif topic == settings.redpanda_topics['windowed']:
+            # Windowed: add to batch
+            self._add_to_windowed_batch(value)
+            await self._check_windowed_flush()
+
+    def _add_to_metrics_batch(self, value: dict) -> None:
+        """Add metrics to batch."""
+        timestamp = self._parse_timestamp(value.get('timestamp'))
         
-        Args:
-            value: Metric dict from Redpanda message
-        """
-        # Convert timestamp string to datetime
-        # The metrics have 'timestamp' field - convert to proper datetime
-        timestamp = value.get('timestamp')
-        if isinstance(timestamp, str):
-            try:
-                dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-            except ValueError:
-                dt = datetime.datetime.now(datetime.timezone.utc)
-        else:
-            dt = datetime.datetime.now(datetime.timezone.utc)
-        
-        self._batch.append({
+        self._metrics_batch.append({
             **value,
-            'time': dt,
-            'timestamp': dt  # Use datetime for copy_records_to_table
+            'time': timestamp,
+            'timestamp': timestamp
         })
         
-        logger.debug(f"Added to batch (size: {len(self._batch)})")
+        logger.debug(f"Added to metrics batch (size: {len(self._metrics_batch)})")
 
-    async def _check_flush(self) -> None:
+    def _add_to_windowed_batch(self, value: dict) -> None:
+        """Add windowed metrics to batch."""
+        # Parse timestamps
+        window_start = self._parse_timestamp(value.get('window_start'))
+        window_end = self._parse_timestamp(value.get('window_end'))
+        
+        self._windowed_batch.append({
+            **value,
+            'window_start': window_start,
+            'window_end': window_end
+        })
+        
+        logger.debug(f"Added to windowed batch (size: {len(self._windowed_batch)})")
+
+    def _parse_timestamp(self, timestamp) -> datetime.datetime:
+        """Parse timestamp string to datetime."""
+        if isinstance(timestamp, str):
+            try:
+                return datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            except ValueError:
+                pass
+        return datetime.datetime.now(datetime.timezone.utc)
+
+    async def _check_metrics_flush(self) -> None:
         """Check if batch should be flushed (size or timeout)."""
         now = datetime.datetime.now(datetime.timezone.utc)
-        time_since_flush = (now - self._last_flush_time).total_seconds()
+        time_since_flush = (now - self._metrics_last_flush_time).total_seconds()
         
         should_flush = (
-            len(self._batch) >= self._batch_max_size or
-            time_since_flush >= self._batch_timeout_seconds
+            len(self._metrics_batch) >= self._metrics_batch_max_size or
+            time_since_flush >= self._metrics_batch_timeout_seconds
         )
         
         if should_flush:
-            await self._flush_batch()
+            await self._flush_metrics_batch()
 
-    async def _flush_batch(self) -> None:
+    async def _check_windowed_flush(self) -> None:
+        """Check if windowed batch should be flushed."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        time_since_flush = (now - self._windowed_last_flush_time).total_seconds()
+        
+        should_flush = (
+            len(self._windowed_batch) >= self._windowed_batch_max_size or
+            time_since_flush >= self._windowed_batch_timeout_seconds
+        )
+        
+        if should_flush:
+            await self._flush_windowed_batch()
+
+    async def _flush_metrics_batch(self) -> None:
         """Write batch to database and commit offset.
         
         This is the critical section - we commit offsets ONLY after
         successful database write to ensure at-least-once delivery.
         """
-        if not self._batch:
+        if not self._metrics_batch:
             return
         
-        batch_size = len(self._batch)
+        batch_size = len(self._metrics_batch)
         logger.info(f"Flushing batch of {batch_size} metrics")
         
         try:
             # Write to database
-            await self.db.insert_batch_metrics(self._batch)
-            
+            await self.db.insert_batch_metrics(self._metrics_batch)
             # Commit offsets ONLY after successful write
             await self.consumer.commit()
             
-            logger.info(f"Successfully inserted {batch_size} metrics and committed offset")
+            logger.info(f"✓ Inserted {batch_size} metrics and committed offset")
             
             # Clear batch and reset timer
-            self._batch.clear()
-            self._last_flush_time = datetime.datetime.now(datetime.timezone.utc)
+            self._metrics_batch.clear()
+            self._metrics_last_flush_time = datetime.datetime.now(datetime.timezone.utc)
             
         except Exception as e:
-            logger.error(f"Failed to flush batch: {e}")
-            # Don't commit - messages will be reprocessed on restart
-            # Could implement retry logic here
+            logger.error(f"Failed to flush metrics batch: {e}")
+            raise
+
+    async def _flush_windowed_batch(self) -> None:
+        """Write windowed batch to database and commit offset."""
+        if not self._windowed_batch:
+            return
+        
+        batch_size = len(self._windowed_batch)
+        logger.info(f"Flushing windowed batch of {batch_size}")
+        
+        try:
+            await self.db.insert_batch_windowed_metrics(self._windowed_batch)
+            await self.consumer.commit()
+            
+            logger.info(f"✓ Inserted {batch_size} windowed metrics")
+            
+            self._windowed_batch.clear()
+            self._windowed_last_flush_time = datetime.datetime.now(datetime.timezone.utc)
+            
+        except Exception as e:
+            logger.error(f"Failed to flush windowed batch: {e}")
             raise
 
     async def _handle_alert(self, value: dict) -> None:
-        """Handle alert message - insert immediately.
-        
-        Args:
-            value: Alert dict from Redpanda message
-        """
-        # Convert timestamp
-        timestamp = value.get('timestamp')
-        if isinstance(timestamp, str):
-            try:
-                dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-            except ValueError:
-                dt = datetime.datetime.now(datetime.timezone.utc)
-        else:
-            dt = datetime.datetime.now(datetime.timezone.utc)
+        """Handle alert message - insert immediately."""
+        timestamp = self._parse_timestamp(value.get('timestamp'))
         
         alert = {
             **value,
-            'timestamp': dt
+            'timestamp': timestamp
         }
         
         await self.db.insert_alert(alert)
+        await self.consumer.commit() # commit immediately for alerts
         logger.debug(f"Inserted alert: {value.get('alert_type')} for {value.get('symbol')}")
 
     def get_stats(self) -> dict:
         """Get consumer statistics."""
         return {
-            'current_batch_count': len(self._batch),
-            '_last_flush_time': self._last_flush_time,
+            'metrics_batch_count': len(self._metrics_batch),
+            'windowed_batch_count': len(self._windowed_batch),
             'running': self._running
         }
 

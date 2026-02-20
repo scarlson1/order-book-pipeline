@@ -1,5 +1,9 @@
 # Windowed Aggregations
 
+# Creates per symbol:
+#   - 1m Tumbling windows
+#   - 5m Sliding windows
+
 import json
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.common.watermark_strategy import WatermarkStrategy
@@ -13,7 +17,7 @@ from pyflink.datastream.connectors.kafka import (
 )
 from pyflink.common.serialization import SimpleStringSchema
 from pyflink.datastream.window import SlidingEventTimeWindows, TumblingProcessingTimeWindows
-from pyflink.datastream.functions import AggregateFunction, KeyedProcessFunction, KeyedCoProcessFunction
+from pyflink.datastream.functions import AggregateFunction
 
 from src.common.models import  OrderBookMetrics
 from src.config import settings
@@ -24,83 +28,85 @@ from jobs.orderbook_alert import parse_metrics
 class TumblingAggFunction(AggregateFunction):
     def create_accumulator(self) -> dict: # todo: type
         return {
-            imbTotal: 0,
-            imbMin: 0,
-            imbMax: 0,
-            spreadTotal: 0,
-            volumeTotal: 0,
-            sampleCount: 0
+            'imbTotal': 0,
+            'imbMin': 0,
+            'imbMax': 0,
+            'spreadTotal': 0,
+            'volumeTotal': 0,
+            'sampleCount': 0
         }
 
     def add(self, value: OrderBookMetrics, acc: dict) -> dict:
         return {
-            imbTotal: acc['imbTotal'] + value.imbalance_ratio,
-            imbMin: min(acc['imbMin'], value.imbalance_ratio),
-            imbMax: max(acc['imbMax'], value.imbalance_ratio),
-            spreadTotal: acc['spreadTotal'] + value.spread_abs, # absolute or spread_bps ??
-            volumeTotal: acc['volumeTotal'] + value.total_volume,
-            sampleCount: acc['sampleCount'] + 1
+            'imbTotal': acc['imbTotal'] + value.imbalance_ratio,
+            'imbMin': min(acc['imbMin'], value.imbalance_ratio),
+            'imbMax': max(acc['imbMax'], value.imbalance_ratio),
+            'spreadTotal': acc['spreadTotal'] + value.spread_abs, # absolute or spread_bps ??
+            'volumeTotal': acc['volumeTotal'] + value.total_volume,
+            'sampleCount': acc['sampleCount'] + 1
         }
     
     def get_result(self, acc: dict) -> dict:
         return {
-            avg_imb: acc['imbTotal'] / acc['sampleCount'],
-            min_imb: acc['imbMin'],
-            max_imb: acc['imbMax'],
-            avg_spread: acc['spreadTotal'] / acc['sampleCount'],
-            avg_volume: acc['volumeTotal'] / acc['sampleCount'],
-            sample_count: acc['sampleCount']
+            'avg_imb': acc['imbTotal'] / acc['sampleCount'],
+            'min_imb': acc['imbMin'],
+            'max_imb': acc['imbMax'],
+            'avg_spread': acc['spreadTotal'] / acc['sampleCount'],
+            'avg_volume': acc['volumeTotal'] / acc['sampleCount'],
+            'sample_count': acc['sampleCount'],
+            'window_type': '1m_tumble'
         }
 
     def merge(self, a: dict, b: dict) -> dict:
         return {
-            imbTotal: a['imbTotal'] + b['imbTotal'],
-            imbMin: min(a['imbMin'], b['imbMin']),
-            imbMax: max(a['imbMax'], b['imbMax']),
-            spreadTotal: a['spreadTotal'] + b['spreadTotal'],
-            volumeTotal: a['volumeTotal'] + b['volumeTotal'],
-            sampleCount: a['sampleCount'] + b['sampleCount'],
+            'imbTotal': a['imbTotal'] + b['imbTotal'],
+            'imbMin': min(a['imbMin'], b['imbMin']),
+            'imbMax': max(a['imbMax'], b['imbMax']),
+            'spreadTotal': a['spreadTotal'] + b['spreadTotal'],
+            'volumeTotal': a['volumeTotal'] + b['volumeTotal'],
+            'sampleCount': a['sampleCount'] + b['sampleCount'],
         }
 
 class SlidingAggFunction(AggregateFunction):
     def create_accumulator(self) -> dict: # todo: type
         return {
-            imbTotal: 0,
-            imbMin: 0,
-            imbMax: 0,
-            spreadTotal: 0,
-            volumeTotal: 0,
-            sampleCount: 0
+            'imbTotal': 0,
+            'imbMin': 0,
+            'imbMax': 0,
+            'spreadTotal': 0,
+            'volumeTotal': 0,
+            'sampleCount': 0
         }
 
     def add(self, value: OrderBookMetrics, acc: dict) -> dict:
         return {
-            imbTotal: acc['imbTotal'] + value.imbalance_ratio,
-            imbMin: min(acc['imbMin'], value.imbalance_ratio),
-            imbMax: max(acc['imbMax'], value.imbalance_ratio),
-            spreadTotal: acc['spreadTotal'] + value.spread_abs, # absolute or spread_bps ??
-            volumeTotal: acc['volumeTotal'] + value.total_volume,
-            sampleCount: acc['sampleCount'] + 1
+            'imbTotal': acc['imbTotal'] + value.imbalance_ratio,
+            'imbMin': min(acc['imbMin'], value.imbalance_ratio),
+            'imbMax': max(acc['imbMax'], value.imbalance_ratio),
+            'spreadTotal': acc['spreadTotal'] + value.spread_abs, # absolute or spread_bps ??
+            'volumeTotal': acc['volumeTotal'] + value.total_volume,
+            'sampleCount': acc['sampleCount'] + 1
         }
     
     def get_result(self, acc: dict) -> dict:
         return {
-            avg_imb: acc['imbTotal'] / acc['sampleCount'],
-            min_imb: acc['imbMin'],
-            max_imb: acc['imbMax'],
-            avg_spread: acc['spreadTotal'] / acc['sampleCount'],
-            avg_volume: acc['volumeTotal'] / acc['sampleCount'],
-            sample_count: acc['sampleCount']
+            'avg_imb': acc['imbTotal'] / acc['sampleCount'],
+            'min_imb': acc['imbMin'],
+            'max_imb': acc['imbMax'],
+            'avg_spread': acc['spreadTotal'] / acc['sampleCount'],
+            'avg_volume': acc['volumeTotal'] / acc['sampleCount'],
+            'sample_count': acc['sampleCount'],
+            'window_type': '5m_sliding'
         }
 
     def merge(self, a: dict, b: dict) -> dict:
         return {
-            imbTotal: a['imbTotal'] + b['imbTotal'],
-            imbMin: min(a['imbMin'], b['imbMin']),
-            imbMax: max(a['imbMax'], b['imbMax']),
-            spreadTotal: a['spreadTotal'] + b['spreadTotal'],
-            volumeTotal: a['volumeTotal'] + b['volumeTotal'],
-            sampleCount: a['sampleCount'] + b['sampleCount'],
+            'imbTotal': a['imbTotal'] + b['imbTotal'],
+            'imbMin': min(a['imbMin'], b['imbMin']),
+            'imbMax': max(a['imbMax'], b['imbMax']),
+            'spreadTotal': a['spreadTotal'] + b['spreadTotal'],
+            'volumeTotal': a['volumeTotal'] + b['volumeTotal'],
+            'sampleCount': a['sampleCount'] + b['sampleCount'],
         }
 
 
@@ -118,7 +124,6 @@ def main():
     )
 
     
-
     try:
         source = (
             KafkaSource.builder()

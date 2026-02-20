@@ -6,11 +6,6 @@ from loguru import logger
 import json
 from src.config import settings
 
-# TODO: Implement Redis client
-# - Connection management
-# - Get/set operations
-# - Key naming conventions
-
 class RedisClient:
     """Async Redis client for caching order book data.
     
@@ -97,7 +92,7 @@ class RedisClient:
                 self.client = None
                 self._closed = True
 
-    # ===== Health & status =====
+    # ===== Health & status ===== #
 
     def is_connected(self) -> bool:
         """Check if Redis is connected.
@@ -149,7 +144,7 @@ class RedisClient:
             logger.error(f"Failed to get Redis info: {e}")
             return {}
 
-    # ===== Name helpers =====
+    # ===== Name helpers ===== #
 
     @staticmethod
     def _metrics_key(symbol: str) -> str:
@@ -166,15 +161,13 @@ class RedisClient:
         """Generate key for alerts list."""
         return f"orderbook:alerts:{symbol.upper()}"
     
+    # TODO: determine difference between stats & windowed (need to add windowed ??)
     @staticmethod
-    def _stats_key(symbol: str) -> str:
+    def _stats_key(symbol: str, window: str) -> str:
         """Generate key for statistics."""
-        return f"orderbook:stats:{symbol.upper()}"
+        return f"orderbook:stats:{window.lower()}:{symbol.upper()}"
 
-    # def _get_key(self, obj: str, symbol: str, v: Optional[str] = 'latest'):
-    #     return f'{obj}:{symbol}:{v}'
-
-    # ===== Metrics Caching =====
+    # ===== Metrics Caching ===== #
 
     async def insert_metrics(
         self,
@@ -212,7 +205,18 @@ class RedisClient:
             logger.error(f'Failed to cache metrics for {symbol}: {e}')
             return False
 
-    
+    async def insert_windowed_metrics(self, symbol: str, window: str, val: dict) -> bool:
+        if not self.is_connected():
+            logger.error("Redis not connected")
+            return False
+
+        try:
+            key = self._stats_key_windowed(symbol)
+        
+        except Exception as e:
+            logger.error(f'Failed to cache windowed metrics for {symbol}: {e}')
+            return False
+
     async def get_cached_metrics(self, symbol: str) -> Optional[Dict]:
         """Get cached metrics for a symbol.
         
@@ -239,7 +243,7 @@ class RedisClient:
             logger.error(f'Failed to get cached metrics for {symbol}: {e}')
             return None
     
-    # ===== Order Book Snapshot Caching =====
+    # ===== Order Book Snapshot Caching ===== #
 
     async def cache_orderbook(
         self,
@@ -296,7 +300,7 @@ class RedisClient:
             logger.error(f"Failed to get cached orderbook for {symbol}: {e}")
             return None
     
-    # ===== Alert Caching (List) =====
+    # ===== Alert Caching (List) ===== #
 
     async def add_alert(
         self,
@@ -324,12 +328,36 @@ class RedisClient:
         try:
             key = self._alerts_key(symbol)
             data = json.dumps(alert, default=str)
+            timestamp = alert['timestamp'] # parse_timestamp(alert['timestamp'])
 
-            await self.client.lpush(key, data)
+            # use zadd for sorted list
+            # Add to sorted set
+            await self.client.zadd(
+                key,
+                {data: timestamp}
+            )
+            
+            # Also add to "all" feed
+            await self.client.zadd(
+                self._alerts_key('all'),
+                {data: timestamp}
+            )
+            
+            # Trim to last 100 (prevent unbounded growth)
+            await self.client.zremrangebyrank(
+                key,
+                0, -max_alerts  # Keep only last 100
+            )
+            await self.client.zremrangebyrank(
+                self._alerts_key('all'),
+                0, -max_alerts  # Keep only last 100
+            )
 
-            await self.client.ltrim(key, 0, max_alerts - 1)
+            # await self.client.lpush(key, data)
 
-            await self.client.expire(key, 3600) # 1 hour
+            # await self.client.ltrim(key, 0, max_alerts - 1)
+
+            # await self.client.expire(key, 3600) # 1 hour
 
             logger.debug(f'Added alert for {symbol}')
             return True
@@ -360,15 +388,34 @@ class RedisClient:
         try:
             key = self._alerts_key(symbol)
 
-            alerts = await self.client.lrange(key, 0, limit - 1)
+            # alerts = await self.client.lrange(key, 0, limit - 1)
 
-            return [json.loads(alert) for alert in alerts]
+            # return [json.loads(alert) for alert in alerts]
+            
+            
+            # Redis Sorted Set: scores are timestamps, values are alert JSON
+            # returns: list[tuple[ts, alert]]
+            # e.g. [[timestamp, { alert_type: 'VELOCITY_SPIKE', symbol: 'BTCUSDT', ... }]]
+            # https://redis.io/docs/latest/commands/zrevrange/
+            # deprecated - TODO update redis to current version (v5 -> v8) - replace zrevrange with "ZRANGE with the REV argument"
+            alerts = await self.client.zrevrange(
+                key,
+                0,
+                limit - 1,
+                withscores=True
+            )
+
+            if alerts:
+                return [
+                    {**json.loads(alert), 'timestamp': score }
+                    for alert, score in alerts
+                ]
         
         except Exception as e:
             logger.error(f'failed to get alerts for {symbol}: {e}')
             return []
 
-    # ===== Statistics Caching =====
+    # ===== Statistics Caching ===== #
 
     async def cache_statistics(
         self,
@@ -389,10 +436,15 @@ class RedisClient:
         if not self.is_connected():
             return False
 
+        window_type = stats.get('window_type')
+        window = '5m' if window_type == '5m_sliding' else '1m' if window_type == '1m_tumble' else None
+        if not window:
+            logger.warning('statistics message missing "window_type" field')
+            return False
+
         try:
-            key = self._stats_key(symbol)
-            data = json.dumps(stats, default=str)
-            await self.client.setex(key, ttl, data)
+            key = self._stats_key(symbol, window)
+            await self.client.setex(key, ttl, json.dumps(stats, default=str))
 
             logger.debug(f'Cached stats for {symbol}')
             return True
@@ -401,7 +453,7 @@ class RedisClient:
             logger.error(f'Failed to cache stats for {symbol}: {e}')
             return False
 
-    async def get_cached_statistics(self, symbol: str) -> Optional[Dict]:
+    async def get_cached_statistics(self, symbol: str, window: str) -> Optional[Dict]:
         """Get cached statistics.
         
         Args:
@@ -414,7 +466,7 @@ class RedisClient:
             return None
         
         try:
-            key = self._stats_key(symbol)
+            key = self._stats_key(symbol, window)
             data = await self.client.get(key)
 
             if data:
@@ -425,7 +477,7 @@ class RedisClient:
             logger.error(f'Failed to get cached stats for {symbol}')
             return None
 
-    # ===== Batch Operations =====
+    # ===== Batch Operations ===== #
 
     async def cache_multiple_metrics(
         self,
@@ -505,7 +557,7 @@ class RedisClient:
             logger.error(f'Failed batch get: {e}')
             return {symbol: None for symbol in symbols}
 
-    # ===== Utility Methods =====
+    # ===== Utility Methods ===== #
 
     async def delete_key(self, key: str) -> bool:
         """Delete a specific key.
@@ -585,6 +637,8 @@ class RedisClient:
 
         # ===== Context Manager Support =====
     
+    # ===== Context Switching ===== #
+
     async def __aenter__(self):
         """Async context manager entry."""
         await self.connect()
