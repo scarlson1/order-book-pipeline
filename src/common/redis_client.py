@@ -161,11 +161,15 @@ class RedisClient:
         """Generate key for alerts list."""
         return f"orderbook:alerts:{symbol.upper()}"
     
-    # TODO: determine difference between stats & windowed (need to add windowed ??)
     @staticmethod
     def _stats_key(symbol: str, window: str) -> str:
         """Generate key for statistics."""
         return f"orderbook:stats:{window.lower()}:{symbol.upper()}"
+
+    @staticmethod
+    def _windowed_key(symbol: str, window: str) -> str:
+        """Generate key for statistics."""
+        return f"orderbook:windowed:{window.lower()}:{symbol.upper()}"
 
     # ===== Metrics Caching ===== #
 
@@ -203,18 +207,6 @@ class RedisClient:
 
         except Exception as e:
             logger.error(f'Failed to cache metrics for {symbol}: {e}')
-            return False
-
-    async def insert_windowed_metrics(self, symbol: str, window: str, val: dict) -> bool:
-        if not self.is_connected():
-            logger.error("Redis not connected")
-            return False
-
-        try:
-            key = self._stats_key_windowed(symbol)
-        
-        except Exception as e:
-            logger.error(f'Failed to cache windowed metrics for {symbol}: {e}')
             return False
 
     async def get_cached_metrics(self, symbol: str) -> Optional[Dict]:
@@ -415,6 +407,119 @@ class RedisClient:
             logger.error(f'failed to get alerts for {symbol}: {e}')
             return []
 
+    # ===== Windowed Metrics Caching ===== #
+
+    async def add_windowed(
+        self,
+        symbol: str,
+        window_type: str,
+        window_data: Dict,
+        ttl: int = 3600
+    ) -> bool:
+        """Add windowed metrics to Redis.
+        
+        Args:
+            symbol: Trading symbol
+            window_type: Window type ('1m_tumbling' or '5m_sliding')
+            window_data: Windowed metrics dictionary with window_end timestamp
+            ttl: Time-to-live in seconds (default: 1 hour)
+            
+        Reference: https://redis.io/commands/zadd/
+        """
+        if not self.is_connected():
+            logger.error("Redis not connected")
+            return False
+
+        try:
+            # Get window_end timestamp for sorting
+            window_end = window_data.get('window_end')
+            if not window_end:
+                logger.error("window_data missing 'window_end' field")
+                return False
+
+            # Convert to float for sorted set score
+            if isinstance(window_end, str):
+                from datetime import datetime
+                window_end = datetime.fromisoformat(window_end.replace('Z', '+00:00'))
+            score = window_end.timestamp() if hasattr(window_end, 'timestamp') else float(window_end)
+
+            # Key for sorted set (history)
+            sorted_set_key = self._windowed_key(symbol, window_type)
+            
+            # latest_key = self._windowed_latest_key(symbol, window_type)
+
+            # Serialize data
+            data = json.dumps(window_data, default=str)
+
+            # Use pipeline for atomic operations
+            async with self.client.pipeline() as pipe:
+                # Add to sorted set (score = window_end timestamp)
+                pipe.zadd(sorted_set_key, {data: score})
+                
+                # Set latest key
+                # pipe.set(latest_key, data, ex=ttl)
+                
+                # Trim sorted set to keep only last 100 windows
+                # Remove oldest entries (lowest scores)
+                pipe.zremrangebyrank(sorted_set_key, 0, -101)
+                
+                # Set TTL on sorted set key
+                pipe.expire(sorted_set_key, ttl)
+                
+                await pipe.execute()
+
+            logger.debug(f'Added windowed metrics for {symbol} ({window_type})')
+            return True
+
+        except Exception as e:
+            logger.error(f'Failed to add windowed metrics for {symbol}: {e}')
+            return False
+
+    async def get_windowed(
+        self,
+        symbol: str,
+        window_type: str,
+        limit: int = 10
+    ) -> List[Dict]:
+        """Get windowed metrics for a symbol.
+        
+        Args:
+            symbol: Trading symbol
+            window_type: Window type ('1m_tumbling' or '5m_sliding')
+            limit: Maximum number of windows to return (default: 10)
+            
+        Returns:
+            List of windowed metrics dictionaries, most recent first
+            
+        Reference: https://redis.io/commands/zrevrange/
+        """
+        if not self.is_connected():
+            return []
+
+        try:
+            key = self._windowed_key(symbol, window_type)
+
+            # Get most recent windows (highest scores = most recent)
+            results = await self.client.zrevrange(
+                key,
+                0,
+                limit - 1,
+                withscores=True
+            )
+
+            if results:
+                return [
+                    {**json.loads(data), 'window_end_ts': score}
+                    for data, score in results
+                ]
+
+            logger.debug(f'No windowed data found for {symbol} ({window_type})')
+            return []
+
+        except Exception as e:
+            logger.error(f'Failed to get windowed metrics for {symbol}: {e}')
+            return []
+    
     # ===== Statistics Caching ===== #
 
     async def cache_statistics(

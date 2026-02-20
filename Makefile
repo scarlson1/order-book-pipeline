@@ -50,14 +50,10 @@ up:
 
 # Start with Redpanda + Flink (core streaming stack)
 up-streaming:
-	docker-compose --profile with-redpanda up -d
+	docker-compose up -d
 	@echo "Streaming stack starting..."
 	@echo "  Redpanda Console: http://localhost:8080"
 	@echo "  Flink Web UI:     http://localhost:8081"
-
-# Alias for streaming stack
-up-redpanda:
-	docker-compose --profile with-redpanda up -d
 
 # Start with Grafana
 up-grafana:
@@ -69,7 +65,7 @@ up-pgadmin:
 
 # Start everything
 up-all:
-	docker-compose --profile with-redpanda --profile with-grafana --profile with-pgadmin up -d
+	docker-compose --profile with-grafana --profile with-pgadmin up -d
 
 # Flink commands
 flink-ui:
@@ -175,7 +171,7 @@ redis-btc:
 # Setup development environment
 dev-setup:
 	cp .env.example .env
-	mkdir -p src/ingestion src/common dashboard logs
+	mkdir -p logs
 	@echo "Development environment setup complete"
 	@echo "Edit .env with your settings, then run 'make up'"
 

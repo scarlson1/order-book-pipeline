@@ -68,8 +68,6 @@ services:
       - redpanda_data:/var/lib/redpanda/data
     networks:
       - orderbook_network
-    # profiles:
-    #   - with-redpanda
     healthcheck:
       test:
         ['CMD-SHELL', "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
@@ -115,8 +113,6 @@ services:
       "
     networks:
       - orderbook_network
-    profiles:
-      - with-redpanda
     restart: 'no' # Run once and exit
 
   # Redpanda Console (optional - Web UI for Redpanda)
@@ -133,8 +129,6 @@ services:
       KAFKA_SCHEMAREGISTRY_URLS: http://redpanda:8081
     networks:
       - orderbook_network
-    # profiles:
-    #   - with-redpanda
 
   # Data ingestion service
   ingestion:
@@ -291,8 +285,6 @@ services:
       - flink-jobmanager
     networks:
       - orderbook_network
-    # profiles:
-    #   - with-redpanda
 
   # Streamlit dashboard
   dashboard:

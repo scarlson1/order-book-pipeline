@@ -89,12 +89,6 @@ docker-compose --profile with-pgadmin up -d
 
 Access at http://localhost:5050 (admin@orderbook.com/admin)
 
-<!-- ### Start with Kafka
-
-```bash
-docker-compose --profile with-redpanda up -d
-``` -->
-
 ## Next Steps: Implementation
 
 The infrastructure is ready! Now implement:

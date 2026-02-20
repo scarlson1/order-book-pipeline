@@ -344,20 +344,14 @@ docker-compose up -d --build dashboard
 
 ### For High-Throughput Scenarios
 
-1. **Enable Redpanda** for better message buffering:
-
-   ```bash
-   docker-compose --profile with-redpanda up -d
-   ```
-
-2. **Increase PostgreSQL connection pool**:
+1. **Increase PostgreSQL connection pool**:
    Edit `docker-compose.yml` and add to timescaledb environment:
 
    ```yaml
    POSTGRES_MAX_CONNECTIONS: 200
    ```
 
-3. **Optimize TimescaleDB**:
+2. **Optimize TimescaleDB**:
 
    ```sql
    -- Increase chunk interval
@@ -501,7 +495,7 @@ echo "Files in $FLINK_LIB_DIR:"
 ls -lh "$FLINK_LIB_DIR"
 echo ""
 echo "You can now start Flink:"
-echo "  docker compose --profile with-redpanda up -d"
+echo "  docker compose up -d"
 ```
 
 ```bash
