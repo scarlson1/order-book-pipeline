@@ -52,7 +52,7 @@ docker-compose.override.yml
 Thumbs.db
 
 # Data files
-data/
+.data/
 *.csv
 *.parquet
 
