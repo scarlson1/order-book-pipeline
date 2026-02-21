@@ -198,27 +198,27 @@ class DatabaseQueries:
         
         return results[:limit]
 
-# TODO: understand where this value is coming from ??
-# what's summary stats referring to vs windowed aggregates
-async def fetch_summary_stats(symbol: str, window: str = '5m') -> dict:
-    '''
-        Use Case: Dashboard summary cards (avg imbalance, total volume, etc.)
-        Strategy: Redis ONLY (pre-computed by consumer)
+# # TODO: understand where this value is coming from ??
+# # what's summary stats referring to vs windowed aggregates
+# async def fetch_summary_stats(self, symbol: str, window: str = '5m') -> dict:
+#     '''
+#         Use Case: Dashboard summary cards (avg imbalance, total volume, etc.)
+#         Strategy: Redis ONLY (pre-computed by consumer)
 
-        Why Redis ONLY:
-            - Summary stats change slowly (every 30-60s)
-            - Computing on-the-fly is expensive (avg of 1000s of rows)
-            - Better to pre-compute in consumer (redis_consumer.py)
-    '''
-    redis_client = get_redis_client()
+#         Why Redis ONLY:
+#             - Summary stats change slowly (every 30-60s)
+#             - Computing on-the-fly is expensive (avg of 1000s of rows)
+#             - Better to pre-compute in consumer (redis_consumer.py)
+#     '''
+#     redis_client = get_redis_client()
 
-    redis_key = redis_client._stats_key_windowed(symbol, window)
-    cached = await redis_client.get(redis_key)
+#     redis_key = redis_client._stats_key_windowed(symbol, window)
+#     cached = await redis_client.get(redis_key)
 
-    if cached:
-        return json.loads(cached)
+#     if cached:
+#         return json.loads(cached)
 
-    return None
+#     return None
 
 
 async def fetch_windowed_aggregates(

@@ -63,9 +63,13 @@ up-grafana:
 up-pgadmin:
 	docker-compose --profile with-pgadmin up -d
 
+# Submit Flink jobs
+up-grafana:
+	docker-compose --profile auto-submit up -d
+
 # Start everything
 up-all:
-	docker-compose --profile with-grafana --profile with-pgadmin up -d
+	docker-compose --profile with-grafana --profile with-pgadmin --profile auto-submit up -d
 
 # Flink commands
 flink-ui:
@@ -76,6 +80,9 @@ flink-logs:
 
 flink-jobs:
 	docker-compose exec flink-jobmanager flink list
+
+flink-submit:
+	docker compose --profile auto-submit up -d --force-recreate flink-job-submitter
 
 flink-metrics:
 	docker compose exec -e PYTHONPATH=/opt:/opt/src flink-jobmanager ./bin/flink run -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d

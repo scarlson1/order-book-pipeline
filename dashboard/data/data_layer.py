@@ -41,3 +41,10 @@ class DataLayer:
 
     async def get_windowed(self, symbol: str, window_type: str = '5m_sliding', limit: int = 12):
         return await self.db.fetch_windowed_aggregates(symbol, window_type, limit)
+
+    async def get_windowed_aggregates(self, symbol: str, window_type: str = '5m_sliding', limit: int = 12): # Last hour of 5-min windows
+        return await self.db.fetch_windowed_aggregates(symbol, window_type, limit)
+
+    async def get_summary_stats(self, symbol: str):
+        return await self.redis.get_summary_stats(symbol)
+

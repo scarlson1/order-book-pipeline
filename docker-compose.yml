@@ -266,30 +266,48 @@ services:
     image: orderbook-flink:latest
     container_name: orderbook_flink_job_submitter
     # platform: 'linux/amd64'
-    profiles:
-      - auto-submit
     depends_on:
       flink-jobmanager:
         condition: service_healthy
     volumes:
       - ./src:/opt/src
+    env_file:
+      - .env
     environment:
       - FLINK_JOBMANAGER_HOST=flink-jobmanager
       - PYTHONPATH=/opt:/opt/src
     entrypoint: >
-      bash -c "
-        echo 'Waiting for Flink JobManager to be ready...' &&
-        until curl -sf http://flink-jobmanager:8081/overview > /dev/null; do
-          sleep 2;
-        done &&
-        echo 'JobManager ready! Submitting jobs...' &&
-        /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d &&
-        /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d &&
-        /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d &&
-        echo 'All jobs submitted!' &&
+      bash -lc '
+        set -e
+        echo "Waiting for Flink JobManager to be ready..."
+        until /opt/flink/bin/flink list -m flink-jobmanager:8081 >/dev/null 2>&1; do
+          sleep 2
+        done
+        echo "JobManager ready! Submitting jobs..."
+        /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d
+        /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d
+        /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d
+        echo "All jobs submitted!"
         tail -f /dev/null
-      "
+      '
+    # entrypoint: >
+    #   bash -c "
+    #     echo 'Waiting for Flink JobManager to be ready...' &&
+    #     until curl -sf http://flink-jobmanager:8081/overview > /dev/null; do
+    #       sleep 2;
+    #     done &&
+    #     echo 'JobManager ready! Submitting jobs...' &&
+    #     /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d &&
+    #     /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d &&
+    #     /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d &&
+    #     echo 'All jobs submitted!' &&
+    #     tail -f /dev/null
+    #   "
     restart: 'no'
+    networks:
+      - orderbook_network
+    profiles:
+      - auto-submit
 
   # Streamlit dashboard
   dashboard:
