@@ -68,3 +68,4 @@ htmlcov/
 .pytest_cache/
 
 CHECKLIST.md
+DASHBOARD_UI.md

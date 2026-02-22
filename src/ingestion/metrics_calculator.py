@@ -69,6 +69,6 @@ def calculate_metrics(data: dict) -> dict:
         'best_ask_volume': best_ask_volume,
         'imbalance_velocity': imbalance_velocity,
         'depth_level': settings.calculate_depth,
-        'update_id': data.get('update_id'),
+        'update_id': data['update_id'],
     }
 

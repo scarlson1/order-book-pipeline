@@ -1,11 +1,12 @@
 """Database query functions."""
 
 import datetime
-import json
 import streamlit as st
+from loguru import logger
+from typing import Dict, List, Optional
 
 from src.common.database import DatabaseClient
-from redis_queries import get_redis_client
+from dashboard.data.redis_queries import get_redis_client
 
 
 @st.cache_resource  
@@ -14,8 +15,13 @@ def get_db_client():
     if 'db_client' not in st.session_state:
         client = DatabaseClient()
         import asyncio
-        asyncio.run(client.connect())
-        st.session_state.db_client = client
+        try:
+            asyncio.run(client.connect())
+            st.session_state.db_client = client
+            logger.info("✓ Database client connected")
+        except Exception as e:
+            logger.error(f"Failed to connect database client: {e}")
+            raise
     return st.session_state.db_client
 
 
@@ -25,139 +31,176 @@ class DatabaseQueries:
         self.db = get_db_client()
         self.redis = get_redis_client()
 
-    async def fetch_metrics(self, symbol: str = None) -> dict:
-        """Try Redis, fallback on TimescaleDB"""
+    # ===== Metrics Queries ===== #
 
-        if symbol:
-            # cached = await self.redis.get_cached_metrics(symbol)
-            # if cached:
-            #     return json.loads(cached)
+    async def fetch_latest_metrics(
+        self,
+        symbol: str
+    ) -> Optional[Dict]:
+        """Fetch the most recent metrics for a symbol."""
+        try:
+            results = await self.db.fetch_recent_metrics(symbol, limit=1)
+            return results[0] if results else None
+            
+        except Exception as e:
+            logger.error(f"Error fetching latest metrics for {symbol}: {e}")
+            return None
 
-            metrics = await self.db.fetch_recent_metrics(symbol, limit=1)
+    async def fetch_multiple_symbols_latest(self) -> List[Dict]:
+        """Fetch latest metrics for all symbols.
+        
+        Returns:
+            List of metrics dicts (one per symbol)
+        """
+        try:
+            return await self.db.fetch_multiple_symbols_metrics()
+            
+        except Exception as e:
+            logger.error(f"Error fetching multiple symbols: {e}")
+            return []
 
-            if metrics:
-                await self.redis.insert_metrics(symbol, metrics, ttl=60)
+    # async def fetch_metrics(self, symbol: str = None) -> dict:
+    #     """Try Redis, fallback on TimescaleDB"""
 
-            return metrics
+    #     if symbol:
+    #         # cached = await self.redis.get_cached_metrics(symbol)
+    #         # if cached:
+    #         #     return json.loads(cached)
 
-        # get all symbols
-        else:
-            # symbols = settings.symbol_list
+    #         metrics = await self.db.fetch_recent_metrics(symbol, limit=1)
 
-            # pipeline = redis_client.client.pipeline()
-            # for sym in symbols:
-            #     pipeline.get(redis_client._metrics_key(sym))
+    #         if metrics:
+    #             await self.redis.insert_metrics(symbol, metrics, ttl=60)
 
-            # results = await pipeline.execute()
+    #         return metrics
 
-            # all_cached = all(r is not None for r in results)
+    #     # get all symbols
+    #     else:
+    #         async with self.db.pool.acquire() as conn:
 
-            # if all_cached:
-            #     return {
-            #         symbols[i]: json.loads(results[i])
-            #         for i in range(len(symbols))
-            #     }
+    #             metrics = await conn.fetch("""
+    #                 SELECT DISTINCT ON (symbol)
+    #                     *
+    #                 FROM orderbook_metrics
+    #                 ORDER BY symbol, time DESC
+    #             """)
 
-            async with self.db.pool.acquire() as conn:
+    #         pipeline = self.redis.pipeline()
+    #         for m in metrics:
+    #             pipeline.setex(
+    #                 self.redis._metrics_key(m['symbol']),
+    #                 60,
+    #                 json.dumps(m)
+    #             )
+    #         await pipeline.execute()
 
-                metrics = await conn.fetch("""
-                    SELECT DISTINCT ON (symbol)
-                        *
-                    FROM orderbook_metrics
-                    ORDER BY symbol, time DESC
-                """)
-
-            pipeline = self.redis.pipeline()
-            for m in metrics:
-                pipeline.setex(
-                    self.redis._metrics_key(m['symbol']),
-                    60,
-                    json.dumps(m)
-                )
-            await pipeline.execute()
-
-            return metrics
+    #         return metrics
 
 
     async def fetch_time_series(
         self,
         symbol: str,
-        start_time: datetime,
-        end_time: datetime,
-        interval: str = '1m'  # '1m', '5m', '1h'
-    ) -> list[dict]:
-        """
-            Use Case: Historical charts (last 1 hour, 24 hours, 7 days)
-            Strategy: TimescaleDB ONLY, NO REDIS CACHING
-        """
-        # for small intervals (1m, 5m), query raw data
-        if interval in ('1m', '5m'):
-            return await self.db.query("""
-                SELECT
-                    time,
-                    symbol,
-                    mid_price,
-                    imbalance_ratio,
-                    spread_bps,
-                    bid_volume,
-                    ask_volume
-                FROM orderbook_metrics
-                WHERE symbol = $1
-                    AND time >= $2
-                    AND time <= $3
-                ORDER BY time ASC
-            """, symbol, start_time, end_time)
-
-            # for large intervals use time_bucket aggregation
-            # TimescaleDB Docs: https://www.tigerdata.com/docs/use-timescale/latest/time-buckets/use-time-buckets
-        else:
-            bucket_interval = '1 hour' if interval == '1h' else '1 day'
+        start_time: datetime.datetime,
+        end_time: datetime.datetime,
+        interval: str = '1m'
+    ) -> List[Dict]:
+        """Fetch time series data for charting.
+        
+        Args:
+            symbol: Trading symbol
+            start_time: Start timestamp
+            end_time: End timestamp
+            interval: Aggregation interval ('1m', '5m', '1h', '1d')
             
-            return await self.db.query('''
-                SELECT
-                    time_bucket($1, time) AS avg_mid_price,
-                    symbol,
-                    AVG(mid_price) AS avg_mid_price,
-                    AVG(imbalance_ratio) AS avg_imbalance,
-                    AVG(spread_bps) AS avg_spread,
-                    SUM(bid_volume) AS total_bid_volume,
-                    SUM(ask_volume) AS total_ask_volume
-                FROM orderbook_metrics
-                WHERE symbol = $2
-                    AND time >= $3
-                    AND time <= $4
-                GROUP BY bucket, symbol
-                ORDER BY bucket ASC
-            ''', bucket_interval, symbol, start_time, end_time)
+        Returns:
+            List of time-series data points
+        """
+        try:
+            async with self.db.pool.acquire() as conn:
+                # For small intervals, return raw data
+                if interval in ('1m', '5m'):
+                    rows = await conn.fetch("""
+                        SELECT
+                            time,
+                            symbol,
+                            mid_price,
+                            imbalance_ratio,
+                            spread_bps,
+                            bid_volume,
+                            ask_volume,
+                            total_volume
+                        FROM orderbook_metrics
+                        WHERE symbol = $1
+                            AND time BETWEEN $2 AND $3
+                        ORDER BY time ASC
+                    """, symbol, start_time, end_time)
+                
+                # For large intervals, use time_bucket aggregation
+                # TimescaleDB Docs: https://www.tigerdata.com/docs/use-timescale/latest/time-buckets/use-time-buckets
+                else:
+                    bucket_interval = '1 hour' if interval == '1h' else '1 day'
+                    
+                    rows = await conn.fetch("""
+                        SELECT
+                            time_bucket($1, time) AS time,
+                            symbol,
+                            AVG(mid_price) AS mid_price,
+                            AVG(imbalance_ratio) AS imbalance_ratio,
+                            AVG(spread_bps) AS spread_bps,
+                            SUM(bid_volume) AS bid_volume,
+                            SUM(ask_volume) AS ask_volume,
+                            SUM(total_volume) AS total_volume
+                        FROM orderbook_metrics
+                        WHERE symbol = $2
+                            AND time BETWEEN $3 AND $4
+                        GROUP BY time, symbol
+                        ORDER BY time ASC
+                    """, bucket_interval, symbol, start_time, end_time)
+                
+                return [dict(row) for row in rows]
+                
+        except Exception as e:
+            logger.error(f"Error fetching time series for {symbol}: {e}")
+            return []
 
+    # ===== Alert Queries ===== #
 
     async def fetch_alerts(
         self,
-        symbol: str = None,
+        symbol: Optional[str] = None,
         limit: int = 50,
-        since: datetime = None
-    ) -> list[dict]:
-        '''use since param to either return alerts from redis or db'''
-        query = '''
-            SELECT *
-            FROM orderbook_alerts
-            WHERE 1=1
-        '''
-        params = []
+        since: Optional[datetime.datetime] = None
+    ) -> List[Dict]:
+        '''Fetch alerts fromm the database'''
+        try:
+            query = '''
+                SELECT *
+                FROM orderbook_alerts
+                WHERE 1=1
+            '''
+            params = []
 
-        if symbol:
-            query += ' AND symbol = $1'
-            params.append(symbol)
-        
-        if since:
-            param_num = len(params) + 1
-            query += f' AND time >= ${param_num}'
-            params.append(since)
+            if symbol:
+                query += ' AND symbol = $1'
+                params.append(symbol)
+            
+            if since:
+                param_num = len(params) + 1
+                query += f' AND time >= ${param_num}'
+                params.append(since)
 
-        query += f' ORDER BY time DESC LIMIT ${len(params) + 1}'
-        params.append(limit)
+            query += f' ORDER BY time DESC LIMIT ${len(params) + 1}'
+            params.append(limit)
 
-        return await self.db.query(query, *params)
+            async with self.db.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+                return [dict(row) for row in rows]
+
+        except Exception as e:
+            logger.error(f"Error fetching alerts: {e}")
+            return []
+
+    # ===== Windowed Metrics Queries ===== #
 
     async def fetch_windowed_aggregates(
         self,
@@ -170,141 +213,221 @@ class DatabaseQueries:
             Use Case: Display rolling averages on charts
             Strategy: Hybrid - Redis for latest window, TimescaleDB for history
         '''
-        # Get latest window from Redis
-        latest = await self.redis.get_windowed(symbol, window_type, limit)
+        try:
+            async with self.db.pool.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT
+                        *
+                    FROM orderbook_metrics_windowed
+                    WHERE symbol = $1
+                        AND window_type = $2
+                    ORDER BY window_end DESC
+                    LIMIT $3
+                """, symbol, window_type, limit)
+                
+                return [dict(row) for row in rows]
+        
+        except Exception as e:
+            logger.error(f"Error fetching windowed aggregates: {e}")
+            return []
+
+        # # Get latest window from Redis
+        # latest = await self.redis.get_windowed(symbol, window_type, limit)
         
         
-        # Get historical windows from database
-        async with self.db.pool.acquire() as conn:
-            historical = await conn.execute("""
-                SELECT *
-                FROM orderbook_metrics_windowed
-                WHERE symbol = $1
-                AND window_type = $2
-                ORDER BY window_end DESC
-                LIMIT $3
-            """, symbol, window_type, limit)
+        # # Get historical windows from database
+        # async with self.db.pool.acquire() as conn:
+        #     historical = await conn.execute("""
+        #         SELECT *
+        #         FROM orderbook_metrics_windowed
+        #         WHERE symbol = $1
+        #         AND window_type = $2
+        #         ORDER BY window_end DESC
+        #         LIMIT $3
+        #     """, symbol, window_type, limit)
         
-        # Combine (latest might duplicate most recent historical)
-        results = []
-        if latest:
-            results.append(json.loads(latest))
+        # # Combine (latest might duplicate most recent historical)
+        # results = []
+        # if latest:
+        #     results.append(json.loads(latest))
         
-        # Deduplicate by window_end timestamp
-        seen_timestamps = {r['window_end'] for r in results}
-        for h in historical:
-            if h['window_end'] not in seen_timestamps:
-                results.append(h)
+        # # Deduplicate by window_end timestamp
+        # seen_timestamps = {r['window_end'] for r in results}
+        # for h in historical:
+        #     if h['window_end'] not in seen_timestamps:
+        #         results.append(h)
         
-        return results[:limit]
+        # return results[:limit]
 
-# # TODO: understand where this value is coming from ??
-# # what's summary stats referring to vs windowed aggregates
-# async def fetch_summary_stats(self, symbol: str, window: str = '5m') -> dict:
-#     '''
-#         Use Case: Dashboard summary cards (avg imbalance, total volume, etc.)
-#         Strategy: Redis ONLY (pre-computed by consumer)
+    async def fetch_latest_windowed(
+        self,
+        symbol: str,
+        window_type: str = '5m_sliding'
+    ) -> Optional[Dict]:
+        """Fetch the most recent windowed aggregate."""
+        try:
+            return await self.db.fetch_latest_windowed_metrics(symbol, window_type)
+            
+        except Exception as e:
+            logger.error(f"Error fetching latest windowed: {e}")
+            return None
 
-#         Why Redis ONLY:
-#             - Summary stats change slowly (every 30-60s)
-#             - Computing on-the-fly is expensive (avg of 1000s of rows)
-#             - Better to pre-compute in consumer (redis_consumer.py)
-#     '''
-#     redis_client = get_redis_client()
+    # ===== Percentage Change Queries ===== #
 
-#     redis_key = redis_client._stats_key_windowed(symbol, window)
-#     cached = await redis_client.get(redis_key)
+    async def fetch_price_at_time(
+        self,
+        symbol: str,
+        timestamp: datetime.datetime
+    ) -> Optional[Dict]:
+        """Fetch price closest to a specific timestamp."""
+        try:
+            return await self.db.fetch_price_at_time(symbol, timestamp)
+            
+        except Exception as e:
+            logger.error(f"Error fetching price at time: {e}")
+            return None
 
-#     if cached:
-#         return json.loads(cached)
-
-#     return None
-
-
-async def fetch_windowed_aggregates(
-    symbol: str,
-    window_type: str = '5m_sliding',
-    limit: int = 12  # Last hour of 5-min windows
-):
-    '''
-        Flink Window Output
-        Use Case: Display rolling averages on charts
-        Strategy: Hybrid - Redis for latest window, TimescaleDB for history
-    '''
-    redis = get_redis_client()
-    db = get_db_client()
-    # Get latest window from Redis
-    latest = await redis.get_windowed(symbol, window_type, limit)
-    
-    
-    # Get historical windows from database
-    async with db.pool.acquire() as conn:
-        historical = await conn.execute("""
-            SELECT *
-            FROM orderbook_metrics_windowed
-            WHERE symbol = $1
-            AND window_type = $2
-            ORDER BY window_end DESC
-            LIMIT $3
-        """, symbol, window_type, limit)
-    
-    # Combine (latest might duplicate most recent historical)
-    results = []
-    if latest:
-        results.append(json.loads(latest))
-    
-    # Deduplicate by window_end timestamp
-    seen_timestamps = {r['window_end'] for r in results}
-    for h in historical:
-        if h['window_end'] not in seen_timestamps:
-            results.append(h)
-    
-    return results[:limit]
-
-
-async def fetch_alerts(
-        symbol: str = None,
-        limit: int = 50,
-        since: datetime = None
-    ) -> list[dict]:
-        '''use since param to either return alerts from redis or db'''
-        redis_client = get_redis_client()
-        if since is None:
-            alerts = await redis_client.get_alerts(symbol, limit)
-            if alerts:
-                return alerts
-            # alerts = await redis_client.client.zrevrange(
-            #     redis_client._alerts_key(symbol or 'all'),
-            #     0,
-            #     limit - 1,
-            #     withscores=True
-            # )
-
-            # if alerts:
-            #     return [
-            #         {**json.loads(alert), 'timestamp': score }
-            #         for alert, score in alerts
-            #     ]
-
-        db = get_db_client()
-
-        query = '''
-            SELECT *
-            FROM orderbook_alerts
-            WHERE 1=1
-        '''
-        params = []
-
-        if symbol:
-            query += ' AND symbol = $1'
-            params.append(symbol)
+    async def compute_price_change_24h(self, symbol: str) -> Optional[Dict]:
+        """Compute 24-hour price change.
         
-        if since:
-            param_num = len(params) + 1
-            query += f' AND time >= ${param_num}'
-            params.append(since)
+        Args:
+            symbol: Trading symbol
+            
+        Returns:
+            Dict with current/previous prices and percentage change
+        """
+        try:
+            # Get current price
+            current = await self.fetch_latest_metrics(symbol)
+            if not current:
+                return None
+            
+            # Get price 24h ago
+            day_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
+            previous = await self.fetch_price_at_time(symbol, day_ago)
+            
+            if not previous:
+                return None
+            
+            current_price = float(current['mid_price'])
+            previous_price = float(previous['mid_price'])
+            
+            change_pct = ((current_price - previous_price) / previous_price) * 100
+            
+            return {
+                'current_price': current_price,
+                'previous_price': previous_price,
+                'change_pct': round(change_pct, 2),
+                'change_direction': 'up' if change_pct >= 0 else 'down',
+                'comparison_period': '24h'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error computing price change: {e}")
+            return None
 
-        query += f' ORDER BY time DESC LIMIT ${len(params) + 1}'
-        params.append(limit)
+    async def compute_metric_vs_windowed(
+        self,
+        symbol: str,
+        window_type: str = '5m_sliding'
+    ) -> Optional[Dict]:
+        """Compare current metrics vs windowed average.
+        
+        Args:
+            symbol: Trading symbol
+            window_type: Window type for comparison
+            
+        Returns:
+            Dict with current metrics, averages, and deviation percentages
+        """
+        try:
+            # Get current metrics
+            current = await self.fetch_latest_metrics(symbol)
+            if not current:
+                return None
+            
+            # Get windowed average
+            windowed = await self.fetch_latest_windowed(symbol, window_type)
+            if not windowed:
+                return None
+            
+            # Calculate deviations
+            def calc_deviation(current_val, avg_val):
+                if avg_val == 0:
+                    return 0.0
+                return round(((current_val - avg_val) / abs(avg_val)) * 100, 2)
+            
+            return {
+                'current': {
+                    'imbalance': current['imbalance_ratio'],
+                    'spread_bps': current['spread_bps'],
+                    'volume': current.get('total_volume', 0)
+                },
+                'average': {
+                    'imbalance': windowed['avg_imbalance'],
+                    'spread_bps': windowed['avg_spread_bps'],
+                    'volume': windowed['avg_total_volume']
+                },
+                'deviation_pct': {
+                    'imbalance': calc_deviation(
+                        current['imbalance_ratio'],
+                        windowed['avg_imbalance']
+                    ),
+                    'spread': calc_deviation(
+                        current['spread_bps'],
+                        windowed['avg_spread_bps']
+                    ),
+                    'volume': calc_deviation(
+                        current.get('total_volume', 0),
+                        windowed['avg_total_volume']
+                    )
+                },
+                'comparison_period': window_type
+            }
+            
+        except Exception as e:
+            logger.error(f"Error computing metric deviations: {e}")
+            return None
 
-        return await db.query(query, *params)
+    # ===== Statistics Queries ===== #
+
+    async def fetch_summary_statistics(
+        self,
+        symbol: str,
+        hours: int = 1
+    ) -> Optional[Dict]:
+        """Fetch summary statistics for a symbol."""
+        try:
+            return await self.db.get_statistics(symbol, hours)
+            
+        except Exception as e:
+            logger.error(f"Error fetching summary statistics: {e}")
+            return None
+
+    # ===== Health & Monitoring ===== #
+
+    async def health_check(self) -> bool:
+        """Check database health.
+        
+        Returns:
+            True if healthy
+        """
+        try:
+            return await self.db.health_check()
+            
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            return False
+
+    async def get_connection_stats(self) -> Dict:
+        """Get database connection pool statistics.
+        
+        Returns:
+            Dict with pool stats
+        """
+        try:
+            return await self.db.get_pool_stats()
+            
+        except Exception as e:
+            logger.error(f"Error fetching connection stats: {e}")
+            return {"status": "error", "error": str(e)}

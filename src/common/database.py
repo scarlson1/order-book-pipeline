@@ -400,6 +400,29 @@ class DatabaseClient:
 
             return dict(stats) if stats else {}
 
+    # ===== Dashboard metric card queries ===== #
+
+    async def fetch_price_at_time(self, symbol: str, timestamp: datetime) -> Optional[Dict]:
+        """Fetch the price closest to a specific timestamp.
+        
+        Args:
+            symbol: Trading symbol
+            timestamp: Target timestamp to find closest price
+            
+        Returns:
+            Dictionary with price data or None
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT time, mid_price, best_bid, best_ask
+                FROM orderbook_metrics
+                WHERE symbol = $1 AND time >= $2
+                ORDER BY time ASC
+                LIMIT 1
+            """, symbol, timestamp)
+            
+            return dict(row) if row else None
+
     async def health_check(self) -> bool:
         try:
             async with self.pool.acquire() as conn:
