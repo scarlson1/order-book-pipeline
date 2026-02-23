@@ -288,7 +288,6 @@ services:
         /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d
         /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d
         echo "All jobs submitted!"
-        tail -f /dev/null
       '
     # entrypoint: >
     #   bash -c "

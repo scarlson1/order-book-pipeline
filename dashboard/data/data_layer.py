@@ -20,6 +20,10 @@ class DataLayer:
         self.db = DatabaseQueries()
 
     # ===== Real-time Metrics ===== #
+
+    async def get_orderbook_snapshot(self, symbol: str) -> Optional[Dict]:
+        """Get latest order book snapshot from Redis cache."""
+        return await self.redis.get_orderbook_snapshot(symbol)
     
     async def get_latest_metrics(self, symbol: str) -> Optional[Dict]:
         """Try Redis, fallback to DB, populate cache."""
@@ -81,14 +85,17 @@ class DataLayer:
         """
         # Get current metrics
         current = await self.db.fetch_latest_metrics(symbol)
+        # logger.debug('fetch_latest_metrics: ', current)
         if not current:
             return None
         
         # Get 24h price change
         price_change = await self.db.compute_price_change_24h(symbol)
+        # logger.debug('price_change: ', price_change)
         
         # Get metric deviations from windowed average
         metric_deviations = await self.db.compute_metric_vs_windowed(symbol)
+        # logger.debug('metric_deviations: ', metric_deviations)
         
         # Combine all changes
         changes = {}
@@ -300,8 +307,16 @@ class DataLayer:
         Returns:
             Dict with health status of Redis, DB, and overall system
         """
-        cache_health = await self.redis.check_cache_health()
-        db_health = await self.db.health_check()
+        try:
+            cache_health = await self.redis.check_cache_health()
+        except:
+            cache_health = { 'healthy': False }
+
+        try:
+            db_health = await self.db.health_check()
+        except:
+            db_health = False
+        
         
         return {
             'overall': cache_health['healthy'] and db_health,
@@ -309,7 +324,9 @@ class DataLayer:
             'database': {
                 'healthy': db_health,
                 'pool': await self.db.get_connection_stats()
-            }
+            },
+            'redpanda': 'TODO',
+            'flink': 'TODO'
         }
 
     async def get_cached_symbols(self) -> List[str]:

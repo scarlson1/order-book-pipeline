@@ -5,18 +5,22 @@ import streamlit as st
 from loguru import logger
 from typing import Dict, List, Optional
 
+from dashboard.utils.async_runner import run_async
 from src.common.database import DatabaseClient
 from dashboard.data.redis_queries import get_redis_client
 
+# should streamlit's connection be used instead of DatabaseClient ??
+# https://docs.streamlit.io/develop/tutorials/databases/postgresql
 
-@st.cache_resource  
+
+@st.cache_resource
 def get_db_client():
     """Get or create database client."""
     if 'db_client' not in st.session_state:
         client = DatabaseClient()
-        import asyncio
+        # import asyncio
         try:
-            asyncio.run(client.connect())
+            run_async(client.connect(), timeout=15)
             st.session_state.db_client = client
             logger.info("✓ Database client connected")
         except Exception as e:
@@ -40,6 +44,7 @@ class DatabaseQueries:
         """Fetch the most recent metrics for a symbol."""
         try:
             results = await self.db.fetch_recent_metrics(symbol, limit=1)
+            # print(f'latest metrics: {json.dumps(results, indent=4, sort_keys=True)}')
             return results[0] if results else None
             
         except Exception as e:

@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 import streamlit as st
 from loguru import logger
 
+from dashboard.utils.async_runner import run_async
 from src.common.redis_client import RedisClient
 
 @st.cache_resource
@@ -11,9 +12,10 @@ def get_redis_client():
     """Get or create Redis client."""
     if 'redis_client' not in st.session_state:
         client = RedisClient()
-        import asyncio
+        # import asyncio
         try:
-            asyncio.run(client.connect())
+            # asyncio.run(client.connect())
+            run_async(client.connect(), timeout=10)
             st.session_state.redis_client = client
             logger.info("✓ Redis client connected")
         except Exception as e:
@@ -27,6 +29,23 @@ class RedisQueries:
     def __init__(self):
         self.redis = get_redis_client()
     
+    # ===== Order Book Snapshot Queries ===== #
+
+    async def get_orderbook_snapshot(self, symbol: str) -> Optional[Dict]:
+        """Get latest order book snapshot from Redis cache."""
+        try:
+            cached = await self.redis.get_cached_orderbook(symbol)
+            if cached:
+                logger.debug(f"Cache HIT: orderbook snapshot for {symbol}")
+                return cached
+
+            logger.debug(f"Cache MISS: orderbook snapshot for {symbol}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching orderbook snapshot for {symbol}: {e}")
+            return None
+
     # ===== Metrics Queries ===== #
 
     async def get_latest_metrics(self, symbol: str) -> Optional[Dict]:

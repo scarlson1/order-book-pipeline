@@ -1,43 +1,87 @@
 """Metric card components for top-of-dashboard KPIs."""
 
 from __future__ import annotations
-import asyncio
+import json
 import streamlit as st
 
-# from dashboard.utils.formatting import format_bps, format_percentage, format_volume
+from dashboard.utils.formatting import format_bps, format_percentage, format_volume, format_price
 
-from dashboard.data.data_layer import DataLayer
+from dashboard.utils.async_runner import run_async
 
-def load_data(symbol: str):
-	data_client = DataLayer()
-	return data_client.get_latest_metrics_with_changes(symbol)
+# async def load_data(symbol: str):
+# 	data_client = DataLayer()
+# 	return await data_client.get_latest_metrics_with_changes(symbol)
 
+def _format_volume_delta(value: float | None) -> str | None:
+    """Format volume delta with explicit sign."""
+    if value is None:
+        return None
+    sign = "+" if value > 0 else ""
+    return f"{sign}{format_volume(value, abbreviated=True)}"
+
+def _format_bps_delta(value: float | None) -> str | None:
+    """Format basis points delta with explicit sign."""
+    if value is None:
+        return None
+    sign = "+" if value > 0 else ""
+    return f"{sign}{value:.2f} bps"
+
+@st.fragment()
 def render_metrics_cards(symbol: str):
-	data_load_state = st.text('Loading data...')
-	result = asyncio.run(load_data(symbol))
-	data_load_state.text('Loading data...done!')
-	print('METRICS RESULT: ', result)
+	# data_load_state = st.text('Loading data...')
+	data_client = st.session_state.data_layer
+	# result = asyncio.run(data_client.get_latest_metrics_with_changes(symbol))
+	result = run_async(data_client.get_latest_metrics_with_changes(symbol), timeout=10)
+	# data_load_state.text('Loading data...done!')
+	# print(f'METRICS RESULT: {json.dumps(result, indent=4, default=str)}')
+
+	if not result:
+		return st.text('Failed to load metrics')
+
+	col1, col2, col3, col4 = st.columns(4)
+
+	current = result.get('current', {})
+	changes = result.get('changes', {})
+
+	bid_volume = current.get('bid_volume', 0)
+	ask_volume = current.get('ask_volume', 0)
+	total_volume= bid_volume + ask_volume
 
 	# Display in Streamlit
-	st.metric(
-		'Price',
-		f"${result['current']['mid_price']:,.2f}",
-		delta=f"{result['changes']['price_pct']:+.2f}%"  # ← Automatic!
-	)
+	with col1:
+		st.metric(
+			'Price',
+			value=format_price(current.get('mid_price', '--'), currency='$'),
+			delta=format_percentage(result.get('changes', {}).get('price_pct', '--'), precision=1)
+			# f"${result['current']['mid_price']:,.2f}",
+			# delta=f"{result['changes']['price_pct']:+.2f}%"
+		)
 
-	st.metric(
-		label='⚖️ Imbalance',
-		value=f"{result['current']['imbalance_ratio']*100:+.1f}%",
-		delta=f"{result['changes']['imbalance_pct']:+.1f}% vs avg"
-	)
+	with col2:
+		st.metric(
+			label="Spread",
+			value=format_bps(current.get('spread_bps', '--')),
+			delta=_format_bps_delta(changes.get('spread_pct', '--')),
+			delta_color="inverse",  # Lower spread is better.
+		)
+		# _render_level_badge(spread_level, spread_color)
 
-# if st.button("Fetch Data"):
-#     with st.spinner("Fetching data asynchronously..."):
-#         # Run the async function synchronously within the button's scope
-#         data = asyncio.run(fetch_data_async(url_input))
-#         display_data(data)
+	with col3:
+		st.metric(
+			label='⚖️ Imbalance',
+			value=format_percentage(current.get('imbalance_ratio', '--'), precision=1),
+			# value=f"{current.get('imbalance_ratio', '--')*100:+.1f}%",
+			delta=f"{format_percentage(changes.get('imbalance_pct', '--'), precision=1)} vs avg"
+		)
 
-# data = await data_layer.get_latest_metrics_with_change("BTCUSDT")
+	with col4:
+		st.metric(
+			label="Volume",
+			value=format_volume(total_volume, abbreviated=True),
+			delta=_format_volume_delta(changes.get('volume_pct', 0)),
+		)
+        # _render_level_badge(volume_level, volume_color)
+
 
 # col1, col2, col3, col4 = st.columns(4)
 
@@ -79,23 +123,6 @@ def render_metrics_cards(symbol: str):
 #     if value is None:
 #         return None
 #     return format_percentage(value, include_sign=True)
-
-
-# def _format_bps_delta(value: float | None) -> str | None:
-#     """Format basis points delta with explicit sign."""
-#     if value is None:
-#         return None
-#     sign = "+" if value > 0 else ""
-#     return f"{sign}{value:.2f} bps"
-
-
-# def _format_volume_delta(value: float | None) -> str | None:
-#     """Format volume delta with explicit sign."""
-#     if value is None:
-#         return None
-#     sign = "+" if value > 0 else ""
-#     return f"{sign}{format_volume(value, abbreviated=True)}"
-
 
 # def _imbalance_level(value: float | None) -> tuple[str, str]:
 #     """Color + semantic level for imbalance."""

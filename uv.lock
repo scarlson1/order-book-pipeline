@@ -1361,6 +1361,7 @@ dependencies = [
     { name = "aiohttp" },
     { name = "asyncpg" },
     { name = "hiredis" },
+    { name = "kafka-python-ng" },
     { name = "loguru" },
     { name = "numpy" },
     { name = "pandas" },
@@ -1376,21 +1377,6 @@ dependencies = [
     { name = "streamlit" },
     { name = "streamlit-autorefresh" },
     { name = "websockets" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "black" },
-    { name = "ipython" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-redpanda = [
-    { name = "kafka-python-ng" },
 ]
 
 [package.dev-dependencies]
@@ -1409,33 +1395,24 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9.1" },
     { name = "asyncpg", specifier = ">=0.29.0" },
-    { name = "black", marker = "extra == 'dev'", specifier = ">=23.12.1" },
     { name = "hiredis", specifier = ">=2.2.3" },
-    { name = "ipython", marker = "extra == 'dev'", specifier = ">=8.19.0" },
-    { name = "kafka-python-ng", marker = "extra == 'redpanda'", specifier = ">=2.2.0" },
+    { name = "kafka-python-ng", specifier = ">=2.2.0" },
     { name = "loguru", specifier = ">=0.7.2" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "numpy", specifier = ">=1.26.2" },
     { name = "pandas", specifier = ">=2.1.4" },
     { name = "plotly", specifier = ">=5.18.0" },
     { name = "polars", specifier = ">=0.19.19" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.6.0" },
     { name = "prometheus-client", specifier = ">=0.19.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.9" },
     { name = "pydantic", specifier = ">=2.5.0" },
     { name = "pydantic-settings", specifier = ">=2.1.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.3" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.1" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "redis", specifier = ">=5.0.1" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.9" },
     { name = "sqlalchemy", specifier = ">=2.0.23" },
     { name = "streamlit", specifier = ">=1.29.0" },
     { name = "streamlit-autorefresh", specifier = ">=1.0.1" },
     { name = "websockets", specifier = ">=12.0" },
 ]
-provides-extras = ["redpanda", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2706,16 +2683,16 @@ wheels = [
 
 [[package]]
 name = "virtualenv"
-version = "20.37.0"
+version = "20.39.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "distlib" },
     { name = "filelock" },
     { name = "platformdirs" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c1/ef/d9d4ce633df789bf3430bd81fb0d8b9d9465dfc1d1f0deb3fb62cd80f5c2/virtualenv-20.37.0.tar.gz", hash = "sha256:6f7e2064ed470aa7418874e70b6369d53b66bcd9e9fd5389763e96b6c94ccb7c", size = 5864710, upload-time = "2026-02-16T16:17:59.42Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/54/809199edc537dbace273495ac0884d13df26436e910a5ed4d0ec0a69806b/virtualenv-20.39.0.tar.gz", hash = "sha256:a15f0cebd00d50074fd336a169d53422436a12dfe15149efec7072cfe817df8b", size = 5869141, upload-time = "2026-02-23T18:09:13.349Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/4b/6cf85b485be7ec29db837ec2a1d8cd68bc1147b1abf23d8636c5bd65b3cc/virtualenv-20.37.0-py3-none-any.whl", hash = "sha256:5d3951c32d57232ae3569d4de4cc256c439e045135ebf43518131175d9be435d", size = 5837480, upload-time = "2026-02-16T16:17:57.341Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/b4/8268da45f26f4fe84f6eae80a6ca1485ffb490a926afecff75fc48f61979/virtualenv-20.39.0-py3-none-any.whl", hash = "sha256:44888bba3775990a152ea1f73f8e5f566d49f11bbd1de61d426fd7732770043e", size = 5839121, upload-time = "2026-02-23T18:09:11.173Z" },
 ]
 
 [[package]]

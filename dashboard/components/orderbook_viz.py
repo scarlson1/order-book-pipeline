@@ -1,8 +1,213 @@
 """Order book visualization."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
-# TODO: Create order book depth visualization
-# - Stacked area chart
-# - Heatmap
+from dashboard.utils.async_runner import run_async
+
+BID_COLOR = "#16a34a"
+ASK_COLOR = "#dc2626"
+MID_COLOR = "#f59e0b"
+
+
+def _parse_refresh_rate_to_ms(refresh_rate: str) -> int:
+    """Convert refresh strings like '1s' to milliseconds."""
+    value = (refresh_rate or "1s").strip().lower()
+    try:
+        if value.endswith("ms"):
+            return max(250, int(float(value[:-2])))
+        if value.endswith("s"):
+            return max(250, int(float(value[:-1]) * 1000))
+        return max(250, int(float(value) * 1000))
+    except ValueError:
+        return 1000
+
+def _coerce_timestamp(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def _normalize_levels(levels: Any, side: str, depth_levels: int) -> list[dict[str, float | int]]:
+    if not isinstance(levels, list):
+        return []
+
+    rows: list[dict[str, float | int]] = []
+    for i, level in enumerate(levels[:depth_levels], start=1):
+        if not isinstance(level, (list, tuple)) or len(level) < 2:
+            continue
+        try:
+            price = float(level[0])
+            volume = float(level[1])
+        except (TypeError, ValueError):
+            continue
+        if price <= 0 or volume <= 0:
+            continue
+        rows.append({"level": i, "price": price, "volume": volume})
+
+    rows.sort(key=lambda row: row["price"], reverse=(side == "bid"))
+
+    cumulative = 0.0
+    for row in rows:
+        cumulative += float(row["volume"])
+        row["cum_volume"] = cumulative
+
+    return rows
+
+
+def _get_orderbook_snapshot(symbol: str) -> dict[str, Any] | None:
+    data_layer = st.session_state.get("data_layer")
+    if data_layer is None:
+        return None
+
+    # Preferred: DataLayer method if available.
+    if hasattr(data_layer, "get_orderbook_snapshot"):
+        return run_async(data_layer.get_orderbook_snapshot(symbol), timeout=5)
+
+    # Fallback to existing Redis client chain.
+    return run_async(data_layer.redis.redis.get_cached_orderbook(symbol), timeout=5)
+
+def _create_depth_figure(
+    symbol: str,
+    bids: list[dict[str, float | int]],
+    asks: list[dict[str, float | int]],
+    mid_price: float | None,
+) -> go.Figure:
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=[row["price"] for row in bids],
+            y=[row["cum_volume"] for row in bids],
+            customdata=[[row["volume"], row["level"]] for row in bids],
+            mode="lines",
+            name="Bids",
+            fill="tozeroy",
+            line={"color": BID_COLOR, "width": 2},
+            hovertemplate=(
+                "Side: Bid<br>"
+                "Price: %{x:,.4f}<br>"
+                "Level: %{customdata[1]}<br>"
+                "Level Vol: %{customdata[0]:,.4f}<br>"
+                "Cum Vol: %{y:,.4f}<extra></extra>"
+            ),
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=[row["price"] for row in asks],
+            y=[row["cum_volume"] for row in asks],
+            customdata=[[row["volume"], row["level"]] for row in asks],
+            mode="lines",
+            name="Asks",
+            fill="tozeroy",
+            line={"color": ASK_COLOR, "width": 2},
+            hovertemplate=(
+                "Side: Ask<br>"
+                "Price: %{x:,.4f}<br>"
+                "Level: %{customdata[1]}<br>"
+                "Level Vol: %{customdata[0]:,.4f}<br>"
+                "Cum Vol: %{y:,.4f}<extra></extra>"
+            ),
+        )
+    )
+
+    if mid_price is not None:
+        fig.add_vline(
+            x=mid_price,
+            line_color=MID_COLOR,
+            line_dash="dash",
+            line_width=2,
+            annotation_text=f"Mid {mid_price:,.4f}",
+            annotation_position="top",
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        title=f"{symbol} Depth Chart",
+        xaxis_title="Price",
+        yaxis_title="Cumulative Volume",
+        hovermode="x unified",
+        margin={"l": 10, "r": 10, "t": 40, "b": 10},
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0.0},
+        uirevision=f"orderbook-depth-{symbol}",
+    )
+    return fig
+
+def render_orderbook_viz(symbol: str, depth_levels: int = 20, refresh_rate: str = "1s") -> None:
+    interval_ms = _parse_refresh_rate_to_ms(refresh_rate)
+    st_autorefresh(interval=interval_ms, key=f"orderbook-viz-{symbol}-{interval_ms}")
+
+    snapshot = _get_orderbook_snapshot(symbol)
+    if not snapshot:
+        st.info(f"No cached order book snapshot for {symbol} yet.")
+        return
+
+    bids = _normalize_levels(snapshot.get("bids"), side="bid", depth_levels=depth_levels)
+    asks = _normalize_levels(snapshot.get("asks"), side="ask", depth_levels=depth_levels)
+
+    if not bids or not asks:
+        st.warning("Snapshot exists but has no valid bid/ask levels.")
+        return
+
+    best_bid = float(bids[0]["price"])
+    best_ask = float(asks[0]["price"])
+    mid_price = (best_bid + best_ask) / 2.0
+
+    fig = _create_depth_figure(symbol=symbol, bids=bids, asks=asks, mid_price=mid_price)
+    st.plotly_chart(fig, use_container_width=True, config={"displaylogo": False})
+
+    spread_bps = ((best_ask - best_bid) / mid_price) * 10_000 if mid_price else 0.0
+    ts = _coerce_timestamp(snapshot.get("timestamp") or snapshot.get("time"))
+    age_text = ""
+    if ts is not None:
+        age_sec = (datetime.now(timezone.utc) - ts.astimezone(timezone.utc)).total_seconds()
+        age_text = f" | age: {age_sec:.1f}s"
+
+    st.caption(
+        f"best bid: {best_bid:,.4f} | best ask: {best_ask:,.4f} | spread: {spread_bps:.2f} bps{age_text}"
+    )
+
+
+# # Add auto-refresh (every 5 seconds)
+# st_autorefresh(interval=5000, key="orderbook_refresh")
+
+# def create_depth_chart(snapshot: Dict) -> go.Figure:
+#     bids = snapshot.get('bids', [])
+#     asks = snapshot.get('asks', [])
+
+#     if not bids or not asks:
+#         return None
+
+
+# def render_orderbook_viz(symbol: str):
+#     data_client = st.session_state.data_layer
+#     snapshot = run_async(data_client.redis.get_cached_orderbook(symbol), timeout=5)
+
+#     if not snapshot:
+#         st.warning(f'No order book data for {symbol}')
+
+#     fig = create_depth_chart(snapshot)
+
+#     if fig:
+#         fig.update_layout(
+#             title=f'Order book depth - {symbol}',
+#             xaxis_title='Price',
+#             yaxis_title='Cumulative Volume',
+#             template='plotly_dark'
+#         )
+#         st.plotly_chart(fig, use_container_width=True)
 
