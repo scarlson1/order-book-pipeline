@@ -13,7 +13,7 @@ def _get_windowed_data(symbol: str):
     return run_async(data_layer.get_windowed_aggregates(symbol))
 
 
-def _create_multi_metric_windows(df, symbol: str):
+def _create_multi_metric_windows(df, symbol: str, timezone_pref: str):
     """Show imbalance, spread, and volume in subplots."""
     
     # query = """
@@ -75,7 +75,7 @@ def _create_multi_metric_windows(df, symbol: str):
         row=3, col=1
     )
     
-    fig.update_xaxes(title_text="Time", row=3, col=1)
+    fig.update_xaxes(title_text=f'Time ({timezone_pref})', row=3, col=1)
     fig.update_yaxes(title_text="Ratio", row=1, col=1)
     fig.update_yaxes(title_text="bps", row=2, col=1)
     fig.update_yaxes(title_text="Volume", row=3, col=1)
@@ -88,7 +88,7 @@ def _create_multi_metric_windows(df, symbol: str):
     
     return fig
 
-def render_multi_metric_windows(symbol: str):
+def render_multi_metric_windows(symbol: str, timezone_pref: str = 'America/New_York'):
     rows = _get_windowed_data(symbol)
 
     if rows is None:
@@ -96,6 +96,8 @@ def render_multi_metric_windows(symbol: str):
         return
     
     df = pd.DataFrame(rows)
-    fig = _create_multi_metric_windows(df, symbol)
+    df['time'] = df['time'].dt.tz_convert(timezone_pref)
+
+    fig = _create_multi_metric_windows(df, symbol, timezone_pref)
 
     st.plotly_chart(fig, use_container_width=True)

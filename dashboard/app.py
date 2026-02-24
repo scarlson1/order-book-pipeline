@@ -3,7 +3,7 @@ import pandas as pd
 from numpy.random import default_rng as rng
 
 from dashboard.components.alert_feed import render_alert_feed
-from dashboard.components.imbalance_trend import plot_imbalance_trend
+from dashboard.components.imbalance_trend import render_imbalance_trend
 from dashboard.components.metrics_cards import render_metrics_cards
 from dashboard.components.multi_metric_windows import render_multi_metric_windows
 from dashboard.components.orderbook_viz import render_orderbook_viz
@@ -48,10 +48,17 @@ interval = st.sidebar.selectbox(
     'Interval',
     ('1m', '5m', '1h', '4h', '1d')
 )
+st.sidebar.caption('not currently using interval input')
 
 refresh_rate = st.sidebar.selectbox(
     'Refresh rate',
     ('1s')
+)
+st.sidebar.caption('refresh rate not implemented yet')
+
+timezone_pref = st.sidebar.selectbox(
+    'Timezone',
+    ['America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London', 'UTC']
 )
 
 st.sidebar.space('stretch')
@@ -100,13 +107,13 @@ with col_alert_freq:
 
 
 with st.container(border=True):
-    plot_imbalance_trend(symbol=symbol)
+    render_imbalance_trend(symbol, timezone_pref)
 
 with st.container(border=True):
-    render_volatility_heatmap(symbol=symbol)
+    render_volatility_heatmap(symbol=symbol, timezone_pref=timezone_pref)
 
 with st.container(border=True):
-    render_multi_metric_windows(symbol=symbol)
+    render_multi_metric_windows(symbol=symbol, timezone_pref=timezone_pref)
 
 # advanced controls:
 # time range; chart type; export CSV

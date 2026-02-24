@@ -6,6 +6,7 @@ from loguru import logger
 from typing import Dict, List, Optional
 
 from dashboard.utils.async_runner import run_async
+from dashboard.utils.formatting import get_valid_timezone
 from src.common.database import DatabaseClient
 from dashboard.data.redis_queries import get_redis_client
 
@@ -279,23 +280,28 @@ class DatabaseQueries:
             logger.error(f"Error fetching latest windowed: {e}")
             return None
 
-    async def get_volatility_data(self, symbol: str):
+    async def get_volatility_data(self, symbol: str, timezone_pref: str = 'America/New_York', days: int = 7):
+        # exclude holidays ??
+        # use more than 7 days ??
         try:
+            timezone = get_valid_timezone(timezone_pref)
+
             async with self.db.pool.acquire() as conn:
                 rows = await conn.fetch("""
                     SELECT 
-                        EXTRACT(DOW FROM window_end) as day_of_week,
-                        EXTRACT(HOUR FROM window_end) as hour,
+                        EXTRACT(DOW FROM window_end AT TIME ZONE $2) as day_of_week,
+                        EXTRACT(HOUR FROM window_end AT TIME ZONE $2) as hour,
                         AVG(max_imbalance - min_imbalance) as avg_volatility
                     FROM orderbook_metrics_windowed
                     WHERE symbol = $1
                         AND window_type = '5m_sliding'
-                        AND window_end >= NOW() - INTERVAL '7 days'
+                        AND window_end >= NOW() - INTERVAL '$3 days'
                     GROUP BY day_of_week, hour
                     ORDER BY day_of_week, hour
-                """, symbol)
+                """, symbol, timezone, days)
 
-                # TODO: cache --> self.redis.insert_volatility_heatmap(symbol, rows)
+                # self.redis.insert_volatility_data(symbol, timezone, rows)
+
                 
                 return [dict(row) for row in rows]
         

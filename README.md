@@ -523,6 +523,39 @@ See `Dockerfile.flink` - this is the current implimentation.
 - `Dockerfile.flink` to build custom image that downloads the connectors
 - results in larger docker image, but easier to maintain / removes dev setup step
 
+## Potential Features Roadmap
+
+- Add data sources
+  - [aggregate trade streams](https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Aggregate-Trade-Streams) could allow charts like [bookmap's](https://bookmap.com/en/features) volume bubbles
+  - Add Binance Kline/Candlestick Stream: pushes updates for price, volume, and OHLC data every second for specific timeframes (1m to 1month)
+  - Futures data could be added to analyze arbitrage opportunities
+  - Streams from other exchanges / stocks
+  - Alt data:
+    - satellite imagery for retail traffic
+    - credit card transaction data
+    - twitter/reddit for sentiment/behavioral signals
+- Analysis
+  - Anomaly detection beyond rules (ML)
+    - ML could better determine what "unusual" looks like from a specific symbol's typical behavior
+    - detect multi-factor anomalies (imbalance + velocity + volume)
+    - adaptive thresholds based on time of day / volatility regime
+  - Imbalance Regime Classification (ML/LLM)
+    - classify current market state into regimes:
+      - accumulation / distribution
+      - trend continuation vs reversal
+      - low liquidity / stressed market
+  - signal correlation discovery (ML)
+    - when spread > X and imbalance velocity > Y, price moves Z direction 70% of the time
+      - cross symbol correlations for pairs trading
+      - leading indicators that precede large moves
+  - smart alert summarization
+    - "3 alerts in 2 minutes: extreme imbalance (0.85), spread widening 2.3x normal, velocity spike. This cluster has preceded +1% moves 65% of time historically."
+  - **LSTM/Transformer models** for short-term price movement prediction (seconds to minutes)
+
+- Trading
+  - Connect to trading websocket
+  - using reinforcement learning for backtesting/training/execution
+
 ## Contributing
 
 This is a portfolio project, but suggestions and improvements are welcome!

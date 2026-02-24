@@ -520,6 +520,45 @@ class RedisClient:
             logger.error(f'Failed to get windowed metrics for {symbol}: {e}')
             return []
     
+    # ===== volatility queries (dashboard) ===== #
+
+    async def insert_volatility_data(self, symbol: str, timezone: str, days: int, vol_data: list[dict], ttl: int = 60):
+        if not self.redis.is_connected():
+            logger.error("Redis not connected")
+            return False
+
+        try:
+            key = f"{self.redis._windowed_key(symbol, '5m_sliding')}:volatility:{timezone}:{days}"
+
+            data = json.dumps(vol_data, default=str)
+
+            await self.client.setex(key, ttl, data)
+
+            logger.debug(f'Cached volatility data for {symbol} (TTL: {ttl}s)')
+            return True
+
+        except Exception as e:
+            logger.error(f'Failed to cache metrics for {symbol}: {e}')
+            return False
+
+    async def get_volatility_data(self, symbol: str, timezone: str, days: int):
+        if not self.redis.is_connected():
+            return None
+        
+        try:
+            key = f"{self.redis._windowed_key(symbol, '5m_sliding')}:volatility:{timezone}:{days}"
+            data = await self.client.get(key)
+
+            if data:
+                return json.loads(data)
+
+            logger.debug(f'Cache miss for {symbol}')
+            return None
+
+        except Exception as e:
+            logger.error(f'Failed to get cached volatility data for {symbol}: {e}')
+            return None
+
     # ===== Statistics Caching ===== #
 
     async def cache_statistics(

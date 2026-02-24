@@ -1,7 +1,6 @@
 import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
 
 from dashboard.utils.async_runner import run_async
 
@@ -12,11 +11,14 @@ def _get_imb_trend_data(symbol: str, window_type: str = '5m_sliding'):
 
     return run_async(data_layer.get_windowed_aggregates(symbol, window_type), timeout=5)
 
-def _create_imbalance_chart(symbol: str):
+def _create_imbalance_chart(symbol: str, timezone_pref: str = 'America/New_York'):
     """Show imbalance trend with min/max bands."""
     rows = _get_imb_trend_data(symbol)
     
     df = pd.DataFrame(rows)
+
+    # convert UTC to specified timezone
+    df['time'] = df['time'].dt.tz_convert(timezone_pref)
     
     # Create figure
     fig = go.Figure()
@@ -71,8 +73,8 @@ def _create_imbalance_chart(symbol: str):
     
     return fig
 
-def plot_imbalance_trend(symbol: str):
-    fig = _create_imbalance_chart(symbol)
+def render_imbalance_trend(symbol: str, timezone_pref: str = 'America/New_York'):
+    fig = _create_imbalance_chart(symbol, timezone_pref)
 
     if fig is None:
         st.warning('Failed to find valid data for imbalance chart')

@@ -185,6 +185,28 @@ class RedisQueries:
             logger.error(f"Error fetching summary stats: {e}")
             return None
 
+    async def insert_volatility_data(self, symbol: str, timezone: str, days: int, data):
+        try:
+            await self.redis.insert_volatility_data(symbol, timezone, days, data)
+            return True
+        except:
+            logger.info('Inserted volatility data for {symbol}')
+            return False
+
+    async def get_volatility_data(self, symbol: str, timezone: str, days: int):
+        try:
+            cached = await self.redis.get_volatility_data(symbol, timezone, days)
+            if cached:
+                logger.debug(f"Cache HIT: volatility data for {symbol} ({timezone})")
+                return cached
+            
+            logger.debug(f"Cache MISS: volatility data for {symbol} ({timezone})")
+            return None
+
+        except Exception as e:
+            logger.error(f'Failed to get cached volatility data for {symbol}: {e}')
+            return None
+
     # ===== Change Calculation Queries ===== #
 
     async def get_metric_changes(self, symbol: str) -> Optional[Dict]:

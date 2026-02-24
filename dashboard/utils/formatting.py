@@ -4,6 +4,7 @@ Provides formatting helpers for order book metrics and other dashboard data.
 """
 from datetime import datetime
 from typing import Optional, Union
+from zoneinfo import ZoneInfo
 
 
 def format_number(
@@ -376,3 +377,8 @@ def get_color_for_severity(severity: str) -> str:
     }
     
     return severity_colors.get(severity.upper(), "#6B7280")
+
+def get_valid_timezone(tz: str) -> str:
+    """Validate timezone string."""
+    tf = ZoneInfo(tz)  # Will raise if invalid
+    return tz
