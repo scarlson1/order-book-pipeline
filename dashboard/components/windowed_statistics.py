@@ -45,9 +45,13 @@ def render_windowed_stats(symbol: str, window_type: str = '5m_sliding'):
         st.info("No windowed statistics available")
         return
 
-    st.subheader(f"📊 WINDOWED STATISTICS ({data.get('window_type', window_type).replace('_', ' ').upper()})")
+    window_start = _format_datetime(data.get('window_start', 'N/A'))
+    window_end = _format_datetime(data.get('window_end', 'N/A'))
+    st.caption(f"Window: {window_start} - {window_end}")
 
-    st.text(f"Window: {data.get('window_start')} - {data.get('window_end')}")
+    # st.subheader(f"📊 WINDOWED STATISTICS ({data.get('window_type', window_type).replace('_', ' ').upper()})")
+
+    # st.text(f"Window: {data.get('window_start')} - {data.get('window_end')}")
 
     # col_metric, col_avg, col_min, col_max = st.columns([2, 1, 1, 1])
     # with col_metric:
@@ -115,11 +119,6 @@ def render_windowed_stats(symbol: str, window_type: str = '5m_sliding'):
             st.markdown(f"**{display_name}**")
         with col_avg_val:
             st.text(_format_metric_value(avg_val, display_name))
-
-    st.markdown("---")
-    window_start = _format_datetime(data.get('window_start', 'N/A'))
-    window_end = _format_datetime(data.get('window_end', 'N/A'))
-    st.caption(f"Window: {window_start} - {window_end}")
 
     st.markdown('---')
     st.json(data, expanded=False)

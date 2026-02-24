@@ -294,6 +294,15 @@ class DataLayer:
         # Fallback to DB
         return await self.db.fetch_latest_windowed(symbol, window_type)
 
+    async def get_volatility_data(self, symbol: str):
+        # TODO: add to redis client
+        # cached = await self.redis.get_volatility_data(symbol)
+        # if cached:
+        #     return cached
+        
+        # Fallback to DB
+        return await self.db.get_volatility_data(symbol)
+
     # ===== Summary Statistics ===== #
 
     async def get_summary_stats(self, symbol: str) -> Optional[Dict]:

@@ -132,7 +132,7 @@ def _render_alert_details(alerts: list[dict], max_display: int = 5) -> None:
     if not important_alerts:
         return
     
-    with st.expander(f'⚠️ Recent Critical Alerts ({len(important_alerts)})', expanded=True):
+    with st.expander(f'⚠️ Recent Critical Alerts ({len(important_alerts)})', expanded=False):
         for alert in important_alerts:
             severity = alert.get('severity', 'LOW')
             color = _severity_color(severity)

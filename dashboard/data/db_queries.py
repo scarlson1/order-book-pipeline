@@ -229,6 +229,8 @@ class DatabaseQueries:
                     ORDER BY window_end DESC
                     LIMIT $3
                 """, symbol, window_type, limit)
+
+
                 
                 return [dict(row) for row in rows]
         
@@ -276,6 +278,30 @@ class DatabaseQueries:
         except Exception as e:
             logger.error(f"Error fetching latest windowed: {e}")
             return None
+
+    async def get_volatility_data(self, symbol: str):
+        try:
+            async with self.db.pool.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT 
+                        EXTRACT(DOW FROM window_end) as day_of_week,
+                        EXTRACT(HOUR FROM window_end) as hour,
+                        AVG(max_imbalance - min_imbalance) as avg_volatility
+                    FROM orderbook_metrics_windowed
+                    WHERE symbol = $1
+                        AND window_type = '5m_sliding'
+                        AND window_end >= NOW() - INTERVAL '7 days'
+                    GROUP BY day_of_week, hour
+                    ORDER BY day_of_week, hour
+                """, symbol)
+
+                # TODO: cache --> self.redis.insert_volatility_heatmap(symbol, rows)
+                
+                return [dict(row) for row in rows]
+        
+        except Exception as e:
+            logger.error(f"Error fetching windowed aggregates: {e}")
+            return []
 
     # ===== Percentage Change Queries ===== #
 

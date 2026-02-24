@@ -42,6 +42,14 @@ def create_imbalance_chart(data: List[Dict], alerts: List[Dict]):
     fig.add_trace(go.Scatter(x=df['time'], y=df['mid_price'], name='Price'), secondary_y=True)
     # line=dict(color='#8B5CF6')
 
+    # Add zero line
+    fig.add_hline(
+        y=0,
+        line_dash="dash",
+        line_color="gray",
+        annotation_text="Neutral"
+    )
+
     # alert markers
     for alert in alerts:
         fig.add_vline(x=alert['time'], line_color='#EF4444')
@@ -61,8 +69,8 @@ def render_timeseries_chart(symbol: str, hours: int = 1, interval: str = '5m'):
         limit=100  # Get alerts within the time range
     ))
 
-    print(f'timeseries data: {json.dumps(data[:2], indent=4, default=str)}')
-    print(f'alert data: {json.dumps(alerts[:2], indent=4, default=str)}')
+    print(f'timeseries data: {json.dumps(data[:1], indent=4, default=str)}')
+    print(f'alert data: {json.dumps(alerts[:1], indent=4, default=str)}')
 
     fig = create_imbalance_chart(data, alerts)
 

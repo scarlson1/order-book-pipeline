@@ -3,10 +3,13 @@ import pandas as pd
 from numpy.random import default_rng as rng
 
 from dashboard.components.alert_feed import render_alert_feed
+from dashboard.components.imbalance_trend import plot_imbalance_trend
 from dashboard.components.metrics_cards import render_metrics_cards
+from dashboard.components.multi_metric_windows import render_multi_metric_windows
 from dashboard.components.orderbook_viz import render_orderbook_viz
 from dashboard.components.services_health_status import render_status_indicators
 from dashboard.components.timeseries import render_timeseries_chart
+from dashboard.components.volatility_heatmap import render_volatility_heatmap
 from dashboard.components.windowed_aggregates import render_windowed_aggregates
 from dashboard.components.windowed_statistics import render_windowed_stats
 from dashboard.data.data_layer import DataLayer
@@ -93,23 +96,21 @@ with col_windowed_stats:
 
 with col_alert_freq:
     # st.bar_chart()
-    st.text('Alert Frequency')
+    st.text('TODO: Alert Frequency')
 
-# # Get last hour of 5-minute windows (12 windows)
-# windows = await data_layer.get_windowed_aggregates(
-#     symbol="BTCUSDT",
-#     window_type="5m_sliding",
-#     limit=12
-# )
 
-# # Show average imbalance over time
-# avg_imbalances = [w['avg_imbalance'] for w in windows]
-# st.line_chart(avg_imbalances)
+with st.container(border=True):
+    plot_imbalance_trend(symbol=symbol)
 
+with st.container(border=True):
+    render_volatility_heatmap(symbol=symbol)
+
+with st.container(border=True):
+    render_multi_metric_windows(symbol=symbol)
 
 # advanced controls:
 # time range; chart type; export CSV
-st.text('Config/Settings')
+# st.text('Config/Settings')
 
 # system status: redpanda, flink jobs, timescaleDB, redis, consumers
 st.text('System Status')
