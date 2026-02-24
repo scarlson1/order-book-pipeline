@@ -171,7 +171,7 @@ def render_orderbook_viz(symbol: str, depth_levels: int = 20, refresh_rate: str 
     mid_price = (best_bid + best_ask) / 2.0
 
     fig = _create_depth_figure(symbol=symbol, bids=bids, asks=asks, mid_price=mid_price)
-    st.plotly_chart(fig, use_container_width=True, config={"displaylogo": False})
+    st.plotly_chart(fig, width='stretch', config={'displaylogo': False})
 
     spread_bps = ((best_ask - best_bid) / mid_price) * 10_000 if mid_price else 0.0
     ts = _coerce_timestamp(snapshot.get("timestamp") or snapshot.get("time"))
@@ -291,7 +291,7 @@ def render_orderbook_viz(symbol: str, depth_levels: int = 20, refresh_rate: str 
 #             yaxis_title="Cumulative Volume",
 #             template="plotly_dark"
 #         )
-#         st.plotly_chart(fig, use_container_width=True)
+#         st.plotly_chart(fig, width='stretch')
 
 
 # # def create_depth_heatmap(snapshot: dict) -> go.Figure:

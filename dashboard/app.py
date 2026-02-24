@@ -7,6 +7,8 @@ from dashboard.components.metrics_cards import render_metrics_cards
 from dashboard.components.orderbook_viz import render_orderbook_viz
 from dashboard.components.services_health_status import render_status_indicators
 from dashboard.components.timeseries import render_timeseries_chart
+from dashboard.components.windowed_aggregates import render_windowed_aggregates
+from dashboard.components.windowed_statistics import render_windowed_stats
 from dashboard.data.data_layer import DataLayer
 
 # Initialize once per session
@@ -85,13 +87,9 @@ render_alert_feed(symbol=symbol, limit=50)
 # two columns: windowed statistics; alert frequency
 col_windowed_stats, col_alert_freq = st.columns(2)
 
-df = pd.DataFrame(
-    rng(0).standard_normal((50, 20)), columns=("col %d" % i for i in range(20))
-)
-
 with col_windowed_stats:
-    st.text('Windowed Statistics')
-    st.dataframe(df)
+    st.text('📊 Windowed Statistics')
+    render_windowed_stats(symbol)
 
 with col_alert_freq:
     # st.bar_chart()

@@ -5,6 +5,7 @@ from streamlit.column_config import DatetimeColumn, TextColumn, NumberColumn
 import pandas as pd
 from datetime import datetime, timedelta
 
+from src.common.models import AlertType, Severity
 from dashboard.utils.async_runner import run_async
 
 # TODO: Create alert feed
@@ -116,7 +117,7 @@ def _render_alert_table(alerts: list[dict], severity_filter: str = 'ALL') -> Non
         df,
         column_config=available_config,
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
         height=400
     )
 
@@ -176,29 +177,39 @@ def render_alert_feed(
             if pd.to_datetime(a.get('time')).tz_localize(None) >= since
         ]
 
-    col_filter, col_window = st.columns([2, 1])
+    col_filter, col_type, col_window = st.columns([2, 1, 1])
 
     with col_filter:
         severity_filter = st.segmented_control(
             'Filter by severity',
-            options=['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'],
+            options=['ALL', *[e.name for e in Severity]],
+            # options=['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'],
             default='ALL',
             key='alert_severity_filter'
+        )
+
+    with col_type:
+        type_filter = st.selectbox(
+            'Alert Type',
+            options=['ALL', *[e.name for e in AlertType]],
+            index=0,
+            key='alert_type_filter'
         )
 
     with col_window:
         st.selectbox(
             "Time window",
             options=["1h", "24h", "7d"],
-            index=1,
+            index=0,
             key="alert_time_window",
         )
 
     # Re-filter based on updated controls
-    if severity_filter != "ALL" and alerts:
+    if (severity_filter != 'ALL' or type_filter != 'ALL') and alerts:
         alerts = [
             a for a in alerts
-            if a.get("severity", "").upper() == severity_filter.upper()
+            if (severity_filter == 'ALL' or a.get("severity", "").upper() == severity_filter.upper())
+            and (type_filter == 'ALL' or a.get("alert_type", "").upper() == type_filter.upper())
         ]
 
     _render_alert_summary(alerts)
@@ -209,52 +220,3 @@ def render_alert_feed(
 
     # expandable details for important alerts
     _render_alert_details(alerts)
-
-
-
-# def render_alert_feed(symbol, limit: int = 50, since: Optional[datetime] = None):
-#     alerts = _get_alerts(symbol, limit, since)
-#     print(f'alerts: {alerts[:2]}')
-#     alerts_df = pd.DataFrame(alerts)
-
-#     st.text('TODO: display alerts')
-#     # TODO: separate out by severity/type & add filter options
-    # severity_filter = st.segmented_control(
-    #     "Filter by severity",
-    #     options=["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"],
-    #     default="ALL"
-    # )
-
-#     st.dataframe(
-#         alerts_df,
-#         column_config={
-#             'time': DatetimeColumn('Time', format="MMM DD HH:mm:ss"),
-#             'severity': TextColumn('Severity', help='Alert severity level'),
-#             'alert_type': TextColumn('Type'),
-#             'message': TextColumn('Message'),
-#             'metric_value': NumberColumn("Value", format='%.2f'),
-#         },
-#         hide_index=True,
-#         use_container_width=True
-#     )
-
-    ### __Real-time Feed: `st.empty()` + containers__
-    # For live-updating alerts without full page refresh:
-    # alert_container = st.empty()
-    # with alert_container.container():
-    #     for alert in recent_alerts:
-    #         if alert.severity == "CRITICAL":
-    #             st.error(f"🔴 {alert.message}")
-    #         elif alert.severity == "HIGH":
-    #             st.warning(f"🟠 {alert.message}")
-    #         else:
-    #             st.info(f"ℹ️ {alert.message}")
-
-
-    ### 5. __Alert Details: `st.expander`__
-
-    # For showing detailed alert info without cluttering the main view.
-
-    # ### 6. __For Alert Statistics: `st.bar_chart` or `st.metric`__
-
-    # For showing alert frequency/counts by type or severity.

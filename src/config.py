@@ -28,9 +28,11 @@ class Settings(BaseSettings):
     # redpanda_bootstrap_servers: str
     redpanda_service: str
     redpanda_bootstrap_port: str
-    redpanda_topic_prefix: str
-    # redpanda_admin_url: str = "http://localhost:19644"
+    # redpanda_admin_port: int = 19644
+    redpanda_admin_url: str = 'http://redpanda:9644'
     redpanda_kafka_port: int = 19092
+    redpanda_topic_prefix: str
+    
 
     # ===== Flink ===== #
     flink_host: str
@@ -114,10 +116,10 @@ class Settings(BaseSettings):
         """Get Redpanda bootstrap servers """
         return f'{self.redpanda_service}:{self.redpanda_bootstrap_port}'
 
-    @property
-    def redpanda_admin_url(self) -> str:
-        """Get Url for pinging Redpanda health checks"""
-        return f'http://{self.redpanda_service}:{self.redpanda_kafka_port}'
+    # @property
+    # def redpanda_admin_url(self) -> str:
+    #     """Get Url for pinging Redpanda health checks"""
+    #     return f'http://{self.redpanda_service}:{self.redpanda_admin_port}'
 
     @property
     def flink_ui_url(self) -> str:
