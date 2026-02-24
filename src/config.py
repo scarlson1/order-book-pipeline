@@ -25,12 +25,18 @@ class Settings(BaseSettings):
     
     # ===== Redpanda/Kafka Settings ===== #
     redpanda_enabled: bool = True
-    redpanda_bootstrap_servers: str
+    # redpanda_bootstrap_servers: str
+    redpanda_service: str
+    redpanda_bootstrap_port: str
     redpanda_topic_prefix: str
+    # redpanda_admin_url: str = "http://localhost:19644"
+    redpanda_kafka_port: int = 19092
 
     # ===== Flink ===== #
     flink_host: str
     flink_parallelism: int
+    flink_port: int = 8081
+    # flink_ui_url: str # = "http://localhost:8081"
 
     # ===== Binance WebSocket Settings ===== #
     binance_ws_url: str 
@@ -102,6 +108,21 @@ class Settings(BaseSettings):
         if self.redis_password:
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/0"
         return f"redis://{self.redis_host}:{self.redis_port}/0"
+
+    @property
+    def redpanda_bootstrap_servers(self) -> str:
+        """Get Redpanda bootstrap servers """
+        return f'{self.redpanda_service}:{self.redpanda_bootstrap_port}'
+
+    @property
+    def redpanda_admin_url(self) -> str:
+        """Get Url for pinging Redpanda health checks"""
+        return f'http://{self.redpanda_service}:{self.redpanda_kafka_port}'
+
+    @property
+    def flink_ui_url(self) -> str:
+        """Get Url for pinging Flink health checks"""
+        return f'http://{self.flink_host}:{self.flink_port}'
 
     @property
     def redpanda_topics(self) -> dict[str, str]:

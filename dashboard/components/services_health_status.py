@@ -3,8 +3,6 @@ import streamlit as st
 
 from dashboard.utils.async_runner import run_async
 
-# TODO: get status of flink & redpanda
-
 
 def render_status_indicators():
     """Render status indicators with actual health checks."""
@@ -13,11 +11,17 @@ def render_status_indicators():
     data_client = st.session_state.data_layer
     result = run_async(data_client.health_check(), timeout=10)
     
+    # Extract health status for each service
+    redis_healthy = result['redis']['healthy']
+    db_healthy = result['database']['healthy']
+    redpanda_healthy = result['redpanda'].get('healthy', False)
+    flink_healthy = result['flink'].get('healthy', False)
+
     statuses = {
-        "Redpanda": True,   # Replace with actual health check
-        "Flink": True,      # Replace with actual health check  
-        "PostgreSQL": result['database']['healthy'],
-        "Redis": result['redis'],
+        "Redpanda": redpanda_healthy,
+        "Flink": flink_healthy,
+        "PostgreSQL": db_healthy,
+        "Redis": redis_healthy,
     }
 
     # st.markdown("""

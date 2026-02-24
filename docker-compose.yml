@@ -297,6 +297,7 @@ services:
         /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d
         /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d
         echo "All jobs submitted!"
+        exit 0
       '
     # entrypoint: >
     #   bash -c "
@@ -332,14 +333,18 @@ services:
       - '8501:8501'
     env_file:
       - .env
-    environment:
-      POSTGRES_HOST: timescaledb
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: orderbook
-      POSTGRES_USER: orderbook_user
-      POSTGRES_PASSWORD: orderbook_pass
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+    # environment:
+    #   POSTGRES_HOST: timescaledb
+    #   POSTGRES_PORT: 5432
+    #   POSTGRES_DB: orderbook
+    #   POSTGRES_USER: orderbook_user
+    #   POSTGRES_PASSWORD: orderbook_pass
+    #   REDIS_HOST: redis
+    #   REDIS_PORT: 6379
+    #   # Redpanda and Flink health check endpoints (Docker network)
+    #   REDPANDA_ADMIN_URL: http://redpanda:19644
+    #   REDPANDA_KAFKA_PORT: 19092
+    #   FLINK_UI_URL: http://flink-jobmanager:8081
     volumes:
       - ./dashboard:/app/dashboard
       - ./src:/app/src

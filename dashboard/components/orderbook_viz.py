@@ -150,8 +150,9 @@ def _create_depth_figure(
     return fig
 
 def render_orderbook_viz(symbol: str, depth_levels: int = 20, refresh_rate: str = "1s") -> None:
+    # TODO: fix autorefresh locking up the app
     interval_ms = _parse_refresh_rate_to_ms(refresh_rate)
-    st_autorefresh(interval=interval_ms, key=f"orderbook-viz-{symbol}-{interval_ms}")
+    # st_autorefresh(interval=interval_ms, key=f"orderbook-viz-{symbol}-{interval_ms}")
 
     snapshot = _get_orderbook_snapshot(symbol)
     if not snapshot:

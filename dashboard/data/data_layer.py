@@ -4,6 +4,8 @@ from loguru import logger
 
 from dashboard.data.db_queries import DatabaseQueries
 from dashboard.data.redis_queries import RedisQueries
+from dashboard.data.redpanda_queries import RedpandaQueries
+from dashboard.data.flink_queries import FlinkQueries
 
 # TODO: prior to deploying, verify secrets are handled correctly
 # https://docs.streamlit.io/get-started/fundamentals/advanced-concepts
@@ -18,6 +20,8 @@ class DataLayer:
     def __init__(self):
         self.redis = RedisQueries()
         self.db = DatabaseQueries()
+        self.redpanda = RedpandaQueries()
+        self.flink = FlinkQueries()
 
     # ===== Real-time Metrics ===== #
 
@@ -305,28 +309,51 @@ class DataLayer:
         """Check health of all data sources.
         
         Returns:
-            Dict with health status of Redis, DB, and overall system
+            Dict with health status of Redis, DB, Redpanda, Flink, and overall system
         """
+        # Check Redis
         try:
             cache_health = await self.redis.check_cache_health()
         except:
             cache_health = { 'healthy': False }
 
+        # Check PostgreSQL
         try:
             db_health = await self.db.health_check()
         except:
             db_health = False
         
+        # Check Redpanda
+        try:
+            redpanda_health = await self.redpanda.health_check()
+        except Exception as e:
+            logger.error(f"Redpanda health check failed: {e}")
+            redpanda_health = { 'healthy': False, 'error': str(e) }
+        
+        # Check Flink
+        try:
+            flink_health = await self.flink.health_check()
+        except Exception as e:
+            logger.error(f"Flink health check failed: {e}")
+            flink_health = { 'healthy': False, 'error': str(e) }
+        
+        # Overall health is healthy if all components are healthy
+        overall = (
+            cache_health.get('healthy', False) and 
+            db_health and 
+            redpanda_health.get('healthy', False) and 
+            flink_health.get('healthy', False)
+        )
         
         return {
-            'overall': cache_health['healthy'] and db_health,
+            'overall': overall,
             'redis': cache_health,
             'database': {
                 'healthy': db_health,
                 'pool': await self.db.get_connection_stats()
             },
-            'redpanda': 'TODO',
-            'flink': 'TODO'
+            'redpanda': redpanda_health,
+            'flink': flink_health
         }
 
     async def get_cached_symbols(self) -> List[str]:
