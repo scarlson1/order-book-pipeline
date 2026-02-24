@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from numpy.random import default_rng as rng
 
+from dashboard.components.alert_feed import render_alert_feed
 from dashboard.components.metrics_cards import render_metrics_cards
 from dashboard.components.orderbook_viz import render_orderbook_viz
 from dashboard.components.services_health_status import render_status_indicators
@@ -75,6 +76,11 @@ with st.container(border=True):
 
 
 # active alerts
+render_alert_feed(symbol=symbol, limit=50)
+# with st.container():
+#     st.text('🚨 Active Alerts')
+#     st.button('🔕 Clear All (not implemented)')
+#     render_alert_feed(symbol)
 
 # two columns: windowed statistics; alert frequency
 col_windowed_stats, col_alert_freq = st.columns(2)

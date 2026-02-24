@@ -87,6 +87,7 @@ def _create_depth_figure(
 ) -> go.Figure:
     fig = go.Figure()
 
+    # bids
     fig.add_trace(
         go.Scatter(
             x=[row["price"] for row in bids],
@@ -106,6 +107,7 @@ def _create_depth_figure(
         )
     )
 
+    # asks
     fig.add_trace(
         go.Scatter(
             x=[row["price"] for row in asks],
@@ -181,33 +183,117 @@ def render_orderbook_viz(symbol: str, depth_levels: int = 20, refresh_rate: str 
         f"best bid: {best_bid:,.4f} | best ask: {best_ask:,.4f} | spread: {spread_bps:.2f} bps{age_text}"
     )
 
+################################################
+# ===== Cline implementation suggestion: ===== #
+################################################
+
+# ### Data Source
+
+# # The order book data is cached in Redis with key: `orderbook:{symbol}:snapshot`
+
+# # Looking at `redis_client.py`:
+
+# # - `cache_orderbook()` stores: `{ bids: [(price, volume), ...], asks: [(price, volume), ...] }`
+# # - TTL is 30 seconds (real-time)
+
+
+# """Order book visualization."""
+# import plotly.graph_objects as go
+# import streamlit as st
+# import pandas as pd
+
+# from dashboard.utils.async_runner import run_async
+
+# from streamlit_autorefresh import st_autorefresh
 
 # # Add auto-refresh (every 5 seconds)
 # st_autorefresh(interval=5000, key="orderbook_refresh")
 
-# def create_depth_chart(snapshot: Dict) -> go.Figure:
+
+# def create_depth_chart(snapshot: dict) -> go.Figure:
+#     """Create depth chart from order book snapshot.
+    
+#     Args:
+#         snapshot: Dict with 'bids' and 'asks' as [(price, volume), ...]
+        
+#     Returns:
+#         Plotly figure with stacked area chart
+#     """
 #     bids = snapshot.get('bids', [])
 #     asks = snapshot.get('asks', [])
-
+    
 #     if not bids or not asks:
 #         return None
+    
+#     # Convert to DataFrames for easier processing
+#     bid_df = pd.DataFrame(bids, columns=['price', 'volume'])
+#     ask_df = pd.DataFrame(asks, columns=['price', 'volume'])
+    
+#     # Calculate cumulative volume
+#     bid_df['cumulative'] = bid_df['volume'].cumsum()
+#     ask_df['cumulative'] = ask_df['volume'].cumsum()
+    
+#     # Reverse asks so area fills correctly (ascending price)
+#     ask_df = ask_df.iloc[::-1]
+    
+#     # Create figure
+#     fig = go.Figure()
+    
+#     # Bids area (green)
+#     fig.add_trace(go.Scatter(
+#         x=bid_df['price'],
+#         y=bid_df['cumulative'],
+#         fill='tozeroy',
+#         mode='none',
+#         fillcolor='rgba(34, 197, 94, 0.5)',  # Green
+#         name='Bids'
+#     ))
+    
+#     # Asks area (red) - filled to y-axis of bids
+#     fig.add_trace(go.Scatter(
+#         x=ask_df['price'],
+#         y=ask_df['cumulative'],
+#         fill='tonexty',
+#         mode='none',
+#         fillcolor='rgba(239, 68, 68, 0.5)',  # Red
+#         name='Asks'
+#     ))
+    
+#     # Mid-price line
+#     mid_price = snapshot.get('mid_price', (bids[0][0] + asks[0][0]) / 2)
+#     fig.add_vline(x=mid_price, line_color='#3B82F6', line_dash='dash')
+    
+#     return fig
 
 
 # def render_orderbook_viz(symbol: str):
+#     """Render order book visualization component."""
 #     data_client = st.session_state.data_layer
-#     snapshot = run_async(data_client.redis.get_cached_orderbook(symbol), timeout=5)
-
+    
+#     # Get latest snapshot from Redis
+#     snapshot = run_async(
+#         data_client.redis.get_cached_orderbook(symbol),
+#         timeout=5
+#     )
+    
 #     if not snapshot:
-#         st.warning(f'No order book data for {symbol}')
-
+#         st.warning(f"No order book data for {symbol}")
+#         return
+    
+#     # Create chart
 #     fig = create_depth_chart(snapshot)
-
+    
 #     if fig:
 #         fig.update_layout(
-#             title=f'Order book depth - {symbol}',
-#             xaxis_title='Price',
-#             yaxis_title='Cumulative Volume',
-#             template='plotly_dark'
+#             title=f"Order Book Depth - {symbol}",
+#             xaxis_title="Price",
+#             yaxis_title="Cumulative Volume",
+#             template="plotly_dark"
 #         )
 #         st.plotly_chart(fig, use_container_width=True)
 
+
+# # def create_depth_heatmap(snapshot: dict) -> go.Figure:
+#     """Create heatmap of order book depth."""
+#     # Combine bids/asks into price levels
+#     # Use go.Heatmap with z=volume, x=price

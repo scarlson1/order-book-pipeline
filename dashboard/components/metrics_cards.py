@@ -52,9 +52,10 @@ def render_metrics_cards(symbol: str):
 		st.metric(
 			'Price',
 			value=format_price(current.get('mid_price', '--'), currency='$'),
-			delta=format_percentage(result.get('changes', {}).get('price_pct', '--'), precision=1)
+			delta=format_percentage(result.get('changes', {}).get('price_pct', '--'), precision=1),
 			# f"${result['current']['mid_price']:,.2f}",
 			# delta=f"{result['changes']['price_pct']:+.2f}%"
+			border=True
 		)
 
 	with col2:
@@ -63,6 +64,7 @@ def render_metrics_cards(symbol: str):
 			value=format_bps(current.get('spread_bps', '--')),
 			delta=_format_bps_delta(changes.get('spread_pct', '--')),
 			delta_color="inverse",  # Lower spread is better.
+			border=True
 		)
 		# _render_level_badge(spread_level, spread_color)
 
@@ -71,7 +73,8 @@ def render_metrics_cards(symbol: str):
 			label='⚖️ Imbalance',
 			value=format_percentage(current.get('imbalance_ratio', '--'), precision=1),
 			# value=f"{current.get('imbalance_ratio', '--')*100:+.1f}%",
-			delta=f"{format_percentage(changes.get('imbalance_pct', '--'), precision=1)} vs avg"
+			delta=f"{format_percentage(changes.get('imbalance_pct', '--'), precision=1)} vs avg",
+			border=True
 		)
 
 	with col4:
@@ -79,6 +82,7 @@ def render_metrics_cards(symbol: str):
 			label="Volume",
 			value=format_volume(total_volume, abbreviated=True),
 			delta=_format_volume_delta(changes.get('volume_pct', 0)),
+			border=True
 		)
         # _render_level_badge(volume_level, volume_color)
 

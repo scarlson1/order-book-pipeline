@@ -3,6 +3,8 @@ import streamlit as st
 
 from dashboard.utils.async_runner import run_async
 
+# TODO: get status of flink & redpanda
+
 
 def render_status_indicators():
     """Render status indicators with actual health checks."""

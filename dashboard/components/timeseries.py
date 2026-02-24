@@ -29,6 +29,10 @@ from dashboard.utils.async_runner import run_async
 
 def create_imbalance_chart(data: List[Dict], alerts: List[Dict]):
     df = pd.DataFrame(data)
+
+    if df.empty or 'time' not in df.columns:
+        return None
+
     # dual-axis = left = imbalance %; right = price
     fig = make_subplots(specs=[[{ 'secondary_y': True }]])
 
@@ -62,6 +66,10 @@ def render_timeseries_chart(symbol: str, hours: int = 1, interval: str = '5m'):
 
     fig = create_imbalance_chart(data, alerts)
 
+    if fig is None:
+        st.warning('Failed to find valid data for timeseries chart')
+        return 
+        
     st.plotly_chart(fig)
 
 # timeseries_data = [{
