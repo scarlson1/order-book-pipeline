@@ -1,6 +1,7 @@
 import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
+from streamlit_autorefresh import st_autorefresh
 
 from dashboard.utils.async_runner import run_async
 
@@ -11,15 +12,9 @@ def _get_imb_trend_data(symbol: str, window_type: str = '5m_sliding'):
 
     return run_async(data_layer.get_windowed_aggregates(symbol, window_type), timeout=5)
 
-def _create_imbalance_chart(symbol: str, timezone_pref: str = 'America/New_York'):
+def _create_imbalance_chart(df):
     """Show imbalance trend with min/max bands."""
-    rows = _get_imb_trend_data(symbol)
-    
-    df = pd.DataFrame(rows)
 
-    # convert UTC to specified timezone
-    df['time'] = df['time'].dt.tz_convert(timezone_pref)
-    
     # Create figure
     fig = go.Figure()
     
@@ -63,6 +58,24 @@ def _create_imbalance_chart(symbol: str, timezone_pref: str = 'America/New_York'
         annotation_text="Neutral"
     )
     
+    return fig
+
+@st.fragment()
+def render_imbalance_trend(symbol: str, timezone_pref: str = 'America/New_York', refresh_rate: int = 10000):
+    st_autorefresh(interval=refresh_rate, key="data_imbalance_refresh")
+
+    rows = _get_imb_trend_data(symbol)
+    
+    df = pd.DataFrame(rows)
+    # convert UTC to specified timezone
+    df['time'] = df['time'].dt.tz_convert(timezone_pref)
+
+    fig = _create_imbalance_chart(df)
+
+    if fig is None:
+        st.warning('Failed to find valid data for imbalance chart')
+        return
+
     fig.update_layout(
         title=f'{symbol} - Imbalance Trend (Last Hour)',
         xaxis_title='Time',
@@ -70,17 +83,8 @@ def _create_imbalance_chart(symbol: str, timezone_pref: str = 'America/New_York'
         hovermode='x unified',
         height=400
     )
-    
-    return fig
-
-def render_imbalance_trend(symbol: str, timezone_pref: str = 'America/New_York'):
-    fig = _create_imbalance_chart(symbol, timezone_pref)
-
-    if fig is None:
-        st.warning('Failed to find valid data for imbalance chart')
-        return 
 
     st.plotly_chart(
         fig,
-        use_container_width=True
+        width='stretch'
     )

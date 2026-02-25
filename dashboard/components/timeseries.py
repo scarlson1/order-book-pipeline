@@ -6,6 +6,8 @@ import streamlit as st
 import pandas as pd
 import json
 
+from streamlit_autorefresh import st_autorefresh
+
 from dashboard.utils.async_runner import run_async
 
 # TODO: Create time series charts
@@ -54,15 +56,27 @@ def create_imbalance_chart(data: List[Dict], alerts: List[Dict]):
     for alert in alerts:
         fig.add_vline(x=alert['time'], line_color='#EF4444')
 
+    fig.update_layout(
+        margin={'l': 10, 'r': 10, 't': 20, 'b': 20},
+        # legend={'orientation': 'h', 'yanchor': 'bottom', 'y': 1.0, 'x': 0.0},
+        legend={ 'orientation': 'h' },
+        title='Imbalance & Price',
+    )
+
     return fig
 
 
 
+@st.fragment()
+def render_timeseries_chart(symbol: str, hours: int = 1, interval: str = '5m', refresh_rate: int = 10000):
+    st_autorefresh(interval=refresh_rate, key="data_timeseries_refresh")
 
-def render_timeseries_chart(symbol: str, hours: int = 1, interval: str = '5m'):
     data_client = st.session_state.data_layer
-	# result = asyncio.run(data_client.get_latest_metrics_with_changes(symbol))
     data = run_async(data_client.get_time_series_last_n_hours(symbol, hours, interval), timeout=10)
+
+    if data is None:
+        st.warning(f'failed to load timeseries chart data for {symbol}')
+        return
 
     alerts = run_async(data_client.get_recent_alerts(
         symbol=symbol,

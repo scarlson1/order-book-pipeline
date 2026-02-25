@@ -28,6 +28,7 @@ class RedisConsumer:
     METRICS_TOPIC = settings.redpanda_topics['metrics']
     WINDOWED_TOPIC = settings.redpanda_topics['windowed']
     ALERTS_TOPIC = settings.redpanda_topics['alerts']
+    RAW_TOPIC = settings.redpanda_topics['raw']
     
     # TTL constants
     METRICS_TTL_SECONDS = 60
@@ -40,7 +41,8 @@ class RedisConsumer:
             topics=[
                 self.METRICS_TOPIC,
                 self.WINDOWED_TOPIC,
-                self.ALERTS_TOPIC
+                self.ALERTS_TOPIC,
+                self.RAW_TOPIC
             ],
             group_id='redis-writer',
             auto_commit=False,  # Manual commit after successful Redis write
@@ -124,6 +126,8 @@ class RedisConsumer:
                         await self._handle_cache_statistics(msg)
                     elif msg.topic == self.ALERTS_TOPIC:
                         await self._handle_add_alert(msg)
+                    elif msg.topic == self.RAW_TOPIC:
+                        await self._handle_cache_snapshot(msg)
                     else:
                         logger.warning(f'Unknown topic: {msg.topic}')
                         continue
@@ -251,6 +255,38 @@ class RedisConsumer:
             logger.debug(f'Added alert for {symbol}')
         else:
             logger.error(f'Failed to add alert for {symbol}')
+
+    async def _handle_cache_snapshot(self, msg):
+        value = msg.value
+
+        logger.info(f"RAW TOPIC: Received message for symbol: {value.get('symbol')}")
+        logger.info(f"  keys in message: {value.keys() if value else None}")
+        logger.info(f"  bids count: {len(value.get('bids', [])) if value else 0}")
+        logger.info(f"  asks count: {len(value.get('asks', [])) if value else 0}")
+
+        if not value:
+            logger.warning('Empty message value for raw snapshot')
+            return
+
+        # extract snapshot data {bids: [...], asks: [...], timestamp: ...}
+        symbol = value.get('symbol')
+        if not symbol:
+            logger.warning('Alert message missing "symbol" field')
+            return
+
+        snapshot_data = {
+            'bids': value.get('bids', []),
+            'asks': value.get('asks', []),
+            'timestamp': value.get('timestamp'),
+        }
+
+        # save to redis
+        success = await self.redis.cache_orderbook(symbol, snapshot_data, ttl=30)
+
+        if success:
+            logger.debug(f'✓ Cached snapshot for {symbol}')
+        else:
+            logger.error(f'✗ Failed to cache orderbook snapshot for {symbol}')
 
     def get_stats(self) -> dict:
         """Get consumer statistics."""

@@ -62,3 +62,23 @@ showSidebarBorder = true
 [theme.sidebar]
 backgroundColor = "#161b22"          # Darker sidebar - VS Code style
 secondaryBackgroundColor = "#21262d" # Code-like sections
+
+# ☀️ LIGHT MODE DEVELOPER PALETTE ☀️
+[theme]
+primaryColor = "#a855f7"             # Keep purple - brand consistency
+backgroundColor = "#ffffff"          # Clean white
+secondaryBackgroundColor = "#f6f8fa" # GitHub light secondary
+textColor = "#1f2328"                # GitHub dark text
+linkColor = "#0969da"                # GitHub blue
+borderColor = "#d0d7de"              # Light gray borders
+showWidgetBorder = true
+baseRadius = "0.375rem"              # Match dark theme
+font = "Inter"                       # Same fonts
+headingFont = "Inter"
+codeFont = "JetBrainsMono"
+codeBackgroundColor = "#f6f8fa"      # Light code background
+showSidebarBorder = true
+
+[theme.sidebar]
+backgroundColor = "#f6f8fa"          # Light sidebar
+secondaryBackgroundColor = "#eaeef2" # Slightly darker for contrast

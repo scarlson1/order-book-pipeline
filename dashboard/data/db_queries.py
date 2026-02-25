@@ -45,6 +45,10 @@ class DatabaseQueries:
         """Fetch the most recent metrics for a symbol."""
         try:
             results = await self.db.fetch_recent_metrics(symbol, limit=1)
+            logger.info(f"Results count: {len(results) if results else 0}")
+            if results:
+                logger.info(f"First result keys: {results[0].keys()}")
+                logger.info(f"First result: {results[0]}")
             # print(f'latest metrics: {json.dumps(results, indent=4, sort_keys=True)}')
             return results[0] if results else None
             
@@ -287,7 +291,7 @@ class DatabaseQueries:
             timezone = get_valid_timezone(timezone_pref)
 
             async with self.db.pool.acquire() as conn:
-                rows = await conn.fetch("""
+                rows = await conn.fetch(f"""
                     SELECT 
                         EXTRACT(DOW FROM window_end AT TIME ZONE $2) as day_of_week,
                         EXTRACT(HOUR FROM window_end AT TIME ZONE $2) as hour,
@@ -295,10 +299,10 @@ class DatabaseQueries:
                     FROM orderbook_metrics_windowed
                     WHERE symbol = $1
                         AND window_type = '5m_sliding'
-                        AND window_end >= NOW() - INTERVAL '$3 days'
+                        AND window_end >= NOW() - INTERVAL '{days} days'
                     GROUP BY day_of_week, hour
                     ORDER BY day_of_week, hour
-                """, symbol, timezone, days)
+                """, symbol, timezone)
 
                 # self.redis.insert_volatility_data(symbol, timezone, rows)
 

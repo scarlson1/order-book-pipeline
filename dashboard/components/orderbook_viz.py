@@ -7,25 +7,13 @@ from typing import Any
 import plotly.graph_objects as go
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
+# from streamlit_autorefresh import st_autorefresh
 
 from dashboard.utils.async_runner import run_async
 
 BID_COLOR = "#16a34a"
 ASK_COLOR = "#dc2626"
 MID_COLOR = "#f59e0b"
-
-
-def _parse_refresh_rate_to_ms(refresh_rate: str) -> int:
-    """Convert refresh strings like '1s' to milliseconds."""
-    value = (refresh_rate or "1s").strip().lower()
-    try:
-        if value.endswith("ms"):
-            return max(250, int(float(value[:-2])))
-        if value.endswith("s"):
-            return max(250, int(float(value[:-1]) * 1000))
-        return max(250, int(float(value) * 1000))
-    except ValueError:
-        return 1000
 
 def _coerce_timestamp(value: Any) -> datetime | None:
     if value is None:
@@ -144,15 +132,15 @@ def _create_depth_figure(
         yaxis_title="Cumulative Volume",
         hovermode="x unified",
         margin={"l": 10, "r": 10, "t": 40, "b": 10},
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0.0},
+        # legend={"orientation": "h", "yanchor": "bottom", "y": 1.25, "x": 0.0},
+        legend={ 'orientation': 'h' },
         uirevision=f"orderbook-depth-{symbol}",
     )
     return fig
 
-def render_orderbook_viz(symbol: str, depth_levels: int = 20, refresh_rate: str = "1s") -> None:
-    # TODO: fix autorefresh locking up the app
-    interval_ms = _parse_refresh_rate_to_ms(refresh_rate)
-    # st_autorefresh(interval=interval_ms, key=f"orderbook-viz-{symbol}-{interval_ms}")
+@st.fragment()
+def render_orderbook_viz(symbol: str, depth_levels: int = 20, refresh_rate: int = 10000) -> None:
+    st_autorefresh(interval=refresh_rate, key="data_orderbook_refresh")
 
     snapshot = _get_orderbook_snapshot(symbol)
     if not snapshot:

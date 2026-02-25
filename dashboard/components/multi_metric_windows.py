@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
+from streamlit_autorefresh import st_autorefresh
 
 from dashboard.utils.async_runner import run_async
 
@@ -88,7 +89,9 @@ def _create_multi_metric_windows(df, symbol: str, timezone_pref: str):
     
     return fig
 
-def render_multi_metric_windows(symbol: str, timezone_pref: str = 'America/New_York'):
+@st.fragment()
+def render_multi_metric_windows(symbol: str, timezone_pref: str = 'America/New_York', refresh_rate: int = 30000):
+    st_autorefresh(interval=refresh_rate, key="data_multi_windowed_metrics_refresh")
     rows = _get_windowed_data(symbol)
 
     if rows is None:
@@ -100,4 +103,4 @@ def render_multi_metric_windows(symbol: str, timezone_pref: str = 'America/New_Y
 
     fig = _create_multi_metric_windows(df, symbol, timezone_pref)
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')

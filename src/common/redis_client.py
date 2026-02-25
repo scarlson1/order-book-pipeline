@@ -523,7 +523,7 @@ class RedisClient:
     # ===== volatility queries (dashboard) ===== #
 
     async def insert_volatility_data(self, symbol: str, timezone: str, days: int, vol_data: list[dict], ttl: int = 60):
-        if not self.redis.is_connected():
+        if not self.is_connected():
             logger.error("Redis not connected")
             return False
 
@@ -542,7 +542,7 @@ class RedisClient:
             return False
 
     async def get_volatility_data(self, symbol: str, timezone: str, days: int):
-        if not self.redis.is_connected():
+        if not self.is_connected():
             return None
         
         try:
@@ -581,7 +581,7 @@ class RedisClient:
             return False
 
         window_type = stats.get('window_type')
-        window = '5m' if window_type == '5m_sliding' else '1m' if window_type == '1m_tumble' else None
+        window = '5m' if window_type == '5m_sliding' else '1m' if window_type == '1m_tumbling' else None
         if not window:
             logger.warning('statistics message missing "window_type" field')
             return False

@@ -3,6 +3,7 @@
 from __future__ import annotations
 import json
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 from dashboard.utils.formatting import format_bps, format_percentage, format_volume, format_price
 
@@ -27,7 +28,8 @@ def _format_bps_delta(value: float | None) -> str | None:
     return f"{sign}{value:.2f} bps"
 
 @st.fragment()
-def render_metrics_cards(symbol: str):
+def render_metrics_cards(symbol: str, refresh_rate: int = 1000):
+	st_autorefresh(interval=refresh_rate, key="data_metrics_refresh")
 	# data_load_state = st.text('Loading data...')
 	data_client = st.session_state.data_layer
 	# result = asyncio.run(data_client.get_latest_metrics_with_changes(symbol))
@@ -49,10 +51,11 @@ def render_metrics_cards(symbol: str):
 
 	# Display in Streamlit
 	with col1:
+		price_pct = changes.get('price_pct')
 		st.metric(
 			'Price',
 			value=format_price(current.get('mid_price', '--'), currency='$'),
-			delta=format_percentage(result.get('changes', {}).get('price_pct', '--'), precision=1),
+			delta=format_percentage(price_pct / 100 if price_pct not in (None, '--') else '--', precision=1),
 			# f"${result['current']['mid_price']:,.2f}",
 			# delta=f"{result['changes']['price_pct']:+.2f}%"
 			border=True
@@ -69,11 +72,12 @@ def render_metrics_cards(symbol: str):
 		# _render_level_badge(spread_level, spread_color)
 
 	with col3:
+		imbalance_pct = changes.get('imbalance_pct', '--')
 		st.metric(
 			label='⚖️ Imbalance',
 			value=format_percentage(current.get('imbalance_ratio', '--'), precision=1),
 			# value=f"{current.get('imbalance_ratio', '--')*100:+.1f}%",
-			delta=f"{format_percentage(changes.get('imbalance_pct', '--'), precision=1)} vs avg",
+			delta=f"{format_percentage(imbalance_pct / 100 if imbalance_pct not in (None, '--') else '--', precision=1)} vs avg",
 			border=True
 		)
 

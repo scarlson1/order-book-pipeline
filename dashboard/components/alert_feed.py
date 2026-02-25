@@ -5,6 +5,8 @@ from streamlit.column_config import DatetimeColumn, TextColumn, NumberColumn
 import pandas as pd
 from datetime import datetime, timedelta
 
+from streamlit_autorefresh import st_autorefresh
+
 from src.common.models import AlertType, Severity
 from dashboard.utils.async_runner import run_async
 
@@ -149,12 +151,14 @@ def _render_alert_details(alerts: list[dict], max_display: int = 5) -> None:
                     """
                 )
 
-
+@st.fragment()
 def render_alert_feed(
     symbol: str,
     limit: int= 50,
-    time_window: str = '1h'
+    time_window: str = '1h',
+    refresh_rate: int = 5000
 ) -> None:
+    st_autorefresh(interval=refresh_rate, key="data_alerts_refresh")
     st.subheader(f'🔔 Alerts: {symbol}')
 
     # Use timezone-aware datetime for comparison

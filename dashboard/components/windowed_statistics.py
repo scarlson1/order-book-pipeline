@@ -1,5 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import streamlit as st
+from zoneinfo import ZoneInfo
+
+from streamlit_autorefresh import st_autorefresh
 
 from dashboard.utils.async_runner import run_async
 
@@ -32,21 +35,28 @@ def _format_metric_value(value, metric_name: str) -> str:
     else:
         return f"{value:.2f}"
 
-def _format_datetime(dt) -> str:
-    """Format datetime for display."""
+def _format_datetime(dt, timezone_pref: str = 'America/New_York') -> str:
+    """Format datetime for display in the specified timezone."""
     if isinstance(dt, datetime):
-        return dt.strftime("%H:%M")
+        # Handle naive datetime (no timezone info) - assume UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        # Convert to the desired timezone
+        local_dt = dt.astimezone(ZoneInfo(timezone_pref))
+        return local_dt.strftime("%H:%M")
     return str(dt)
 
-def render_windowed_stats(symbol: str, window_type: str = '5m_sliding'):
+@st.fragment()
+def render_windowed_stats(symbol: str, window_type: str = '5m_sliding', timezone_pref: str = 'America/New_York', refresh_rate: int = 30000):
+    st_autorefresh(interval=refresh_rate, key="data_windowed_stats_refresh")
     data = _get_windowed_latest(symbol, window_type)
 
     if not data:
         st.info("No windowed statistics available")
         return
 
-    window_start = _format_datetime(data.get('window_start', 'N/A'))
-    window_end = _format_datetime(data.get('window_end', 'N/A'))
+    window_start = _format_datetime(data.get('window_start', 'N/A'), timezone_pref)
+    window_end = _format_datetime(data.get('window_end', 'N/A'), timezone_pref)
     st.caption(f"Window: {window_start} - {window_end}")
 
     # st.subheader(f"📊 WINDOWED STATISTICS ({data.get('window_type', window_type).replace('_', ' ').upper()})")

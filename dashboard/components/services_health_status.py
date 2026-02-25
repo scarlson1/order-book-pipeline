@@ -1,10 +1,12 @@
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 from dashboard.utils.async_runner import run_async
 
-
-def render_status_indicators():
+@st.fragment()
+def render_status_indicators(refresh_rate: int = 10000):
     """Render status indicators with actual health checks."""
+    st_autorefresh(interval=refresh_rate, key="data_sys_health_refresh")
     
     # Get health data (in real app, use st.fragment for async)
     data_client = st.session_state.data_layer

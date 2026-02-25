@@ -14,7 +14,8 @@ def _get_windowed_aggregates(
 
     return run_async(data_layer.get_windowed_aggregates(symbol, window_type, limit), timeout=5)
 
-
-def render_windowed_aggregates(symbol: str):
+@st.fragment()
+def render_windowed_aggregates(symbol: str, refresh_rate: int = 30000):
+    # st_autorefresh(interval=refresh_rate, key="data_windowed_agg_refresh")
     data = _get_windowed_aggregates(symbol)
     print(data)

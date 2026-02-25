@@ -254,6 +254,9 @@ docker-compose logs -f dashboard
 
 # Rebuild after code changes
 docker-compose up -d --build
+
+# resubmit Flink jobs
+docker compose up -d --force-recreate flink-job-submitter
 ```
 
 ### Database Management
