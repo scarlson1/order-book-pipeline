@@ -229,7 +229,7 @@ class DataLayer:
         self,
         symbol: str,
         window_type: str = '5m_sliding',
-        limit: int = 12
+        limit: int = 60
     ) -> List[Dict]:
         """Get windowed aggregates (hybrid Redis/DB).
         

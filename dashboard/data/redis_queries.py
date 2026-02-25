@@ -112,7 +112,7 @@ class RedisQueries:
         self,
         symbol: str,
         window_type: str = '5m_sliding',
-        limit: int = 12
+        limit: int = 60 # sliding every 1m
     ) -> Optional[List[Dict]]:
         """Get windowed aggregates from Redis sorted set.
         

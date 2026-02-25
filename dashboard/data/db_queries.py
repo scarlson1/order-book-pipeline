@@ -45,11 +45,11 @@ class DatabaseQueries:
         """Fetch the most recent metrics for a symbol."""
         try:
             results = await self.db.fetch_recent_metrics(symbol, limit=1)
-            logger.info(f"Results count: {len(results) if results else 0}")
-            if results:
-                logger.info(f"First result keys: {results[0].keys()}")
-                logger.info(f"First result: {results[0]}")
-            # print(f'latest metrics: {json.dumps(results, indent=4, sort_keys=True)}')
+            # logger.info(f"Results count: {len(results) if results else 0}")
+            # if results:
+            #     logger.info(f"First result keys: {results[0].keys()}")
+            #     logger.info(f"First result: {results[0]}")
+            
             return results[0] if results else None
             
         except Exception as e:
@@ -216,7 +216,7 @@ class DatabaseQueries:
         self,
         symbol: str,
         window_type: str = '5m_sliding',
-        limit: int = 12  # Last hour of 5-min windows
+        limit: int = 60  # Last hour of 5-min windows (rolling every 1m)
     ):
         '''
             Flink Window Output

@@ -31,7 +31,7 @@ class RedpandaQueries:
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        print(f'RESPONSE: {data}')
+                        
                         return {
                             'healthy': data.get('is_healthy', False),
                             'controller_id': data.get('controller_id'),

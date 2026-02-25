@@ -136,6 +136,7 @@ def _create_depth_figure(
         legend={ 'orientation': 'h' },
         uirevision=f"orderbook-depth-{symbol}",
     )
+    
     return fig
 
 @st.fragment()

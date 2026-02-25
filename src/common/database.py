@@ -298,7 +298,8 @@ class DatabaseClient:
                 ORDER BY time DESC
                 LIMIT $2
             """, symbol, limit)
-            logger.debug('fetch_recent_metrics (client): ', rows)
+            logger.debug('fetch_recent_metrics (client): ', len(rows))
+
             return [dict(row) for row in rows]
 
     async def fetch_multiple_symbols_metrics(self) -> List[Dict]:

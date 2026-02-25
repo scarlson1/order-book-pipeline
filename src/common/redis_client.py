@@ -528,7 +528,7 @@ class RedisClient:
             return False
 
         try:
-            key = f"{self.redis._windowed_key(symbol, '5m_sliding')}:volatility:{timezone}:{days}"
+            key = f"{self._windowed_key(symbol, '5m_sliding')}:volatility:{timezone}:{days}"
 
             data = json.dumps(vol_data, default=str)
 
@@ -546,7 +546,7 @@ class RedisClient:
             return None
         
         try:
-            key = f"{self.redis._windowed_key(symbol, '5m_sliding')}:volatility:{timezone}:{days}"
+            key = f"{self._windowed_key(symbol, '5m_sliding')}:volatility:{timezone}:{days}"
             data = await self.client.get(key)
 
             if data:

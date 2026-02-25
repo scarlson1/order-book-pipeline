@@ -2,7 +2,7 @@
 
 # Creates per symbol:
 #   - 1m Tumbling windows
-#   - 5m Sliding windows
+#   - 5m Sliding windows (every 1m)
 
 import json
 from datetime import datetime, timedelta, timezone
@@ -203,7 +203,7 @@ def main():
         # sliding 5 minute windows every 30 seconds
         five_min_sliding_stream = (
             metrics_stream
-                .window(SlidingEventTimeWindows.of(Time.minutes(5), Time.seconds(30)))
+                .window(SlidingEventTimeWindows.of(Time.minutes(5), Time.seconds(60)))
                 .aggregate(WindowAggFunction('5m_sliding', 300))
         )
         # https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/operators/windows/#working-with-window-results

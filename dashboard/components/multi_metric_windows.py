@@ -11,7 +11,7 @@ def _get_windowed_data(symbol: str):
     if data_layer is None:
         return None
 
-    return run_async(data_layer.get_windowed_aggregates(symbol))
+    return run_async(data_layer.get_windowed_aggregates(symbol, limit=60))
 
 
 def _create_multi_metric_windows(df, symbol: str, timezone_pref: str):
