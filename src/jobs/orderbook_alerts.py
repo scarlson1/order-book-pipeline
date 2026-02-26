@@ -17,6 +17,7 @@ Documentation:
 
 import json
 from typing import Tuple
+from common.utils import apply_kafka_security
 from loguru import logger
 from pydantic import ValidationError
 from pyflink.datastream import StreamExecutionEnvironment
@@ -485,15 +486,16 @@ def main():
         #         Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/#kafka-deserializationschema
         #
         # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/
-        source = (
+        source_builder = (
             KafkaSource.builder()
                 .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
                 .set_topics(settings.redpanda_topics['metrics'])
                 .set_group_id('flink-alerts-processor')
                 .set_starting_offsets(KafkaOffsetsInitializer.latest())
                 .set_value_only_deserializer(SimpleStringSchema())
-                .build()
+                # .build()
         )
+        source = apply_kafka_security(source_builder).build()
 
         # Configure watermark strategy for event time processing
         # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/
@@ -592,7 +594,7 @@ def main():
         #   - [ ] Replace `SimpleStringSchema` with a typed serializer that
         #         accepts `Alert` objects directly.
         #         Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/#kafka-serializationschema
-        alerts_sink = (
+        alerts_sink_builder = (
             KafkaSink.builder()
                 .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
                 .set_record_serializer(
@@ -603,8 +605,9 @@ def main():
                 )
                 .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .set_transactional_id_prefix('orderbook-alerts')
-                .build()
+                # .build()
         )
+        alerts_sink = apply_kafka_security(alerts_sink_builder).build()
 
         # Serialize and sink
         deduped_alerts.map(

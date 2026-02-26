@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     redis_host: str
     redis_port: int = 6379
     redis_password: str | None = None
+    redis_ssl: bool = False
     
     # ===== Redpanda/Kafka Settings ===== #
     redpanda_enabled: bool = True
@@ -124,9 +125,10 @@ class Settings(BaseSettings):
         Returns:
             Redis connection string
         """
+        scheme = "rediss" if self.redis_ssl else "redis"
         if self.redis_password:
-            return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/0"
-        return f"redis://{self.redis_host}:{self.redis_port}/0"
+            return f"{scheme}://:{self.redis_password}@{self.redis_host}:{self.redis_port}/0"
+        return f"{scheme}://{self.redis_host}:{self.redis_port}/0"
 
     @property
     def redpanda_bootstrap_servers(self) -> str:
@@ -194,7 +196,7 @@ class Settings(BaseSettings):
         logger.info(f"Symbols: {self.symbol_list}")
         logger.info(f"Binance URL: {self.binance_ws_url}")
         logger.info(f"Database: {self.postgres_host}:{self.postgres_port}/{self.postgres_db}")
-        logger.info(f"Redis: {self.redis_host}:{self.redis_port}")
+        logger.info(f"Redis: {self.redis_host}:{self.redis_port} (ssl={self.redis_ssl})")
         logger.info(f"Kafka: {self.redpanda_bootstrap_servers}")
         logger.info("-" * 60)
         logger.info("DOWNSAMPLING CONFIGURATION")

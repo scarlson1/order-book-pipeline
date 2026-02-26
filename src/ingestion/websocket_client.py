@@ -254,7 +254,6 @@ class BinanceWebSocketClient:
         logger.info("WebSocket client stopped")
 
 
-    
     async def __aenter__(self):
         """Context manager entry."""
         return self

@@ -76,6 +76,8 @@ flowchart LR
    - Create Redis database.
    - Capture host, port, password.
 
+> **Note:** Upstash Redis monthly bandwidth limit is 50GB/mo.
+
 3. Redpanda Serverless
    - Create resource group + serverless cluster.
    - Create Kafka user/password.

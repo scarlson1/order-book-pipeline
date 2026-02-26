@@ -6,6 +6,8 @@
 
 import json
 from datetime import datetime, timedelta, timezone
+
+from common.utils import apply_kafka_security
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.common.watermark_strategy import WatermarkStrategy
 from pyflink.common.time import Duration, Time
@@ -168,15 +170,16 @@ def main():
 
     
     try:
-        source = (
+        source_builder = (
             KafkaSource.builder()
                 .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
                 .set_topics(settings.redpanda_topics['metrics'])
                 .set_group_id('flink-agg-processor')
                 .set_starting_offsets(KafkaOffsetsInitializer.latest())
                 .set_value_only_deserializer(SimpleStringSchema())
-                .build()
+                # .build()
         )
+        source = apply_kafka_security(source_builder).build()
 
         metrics_stream = (
             env.from_source(
@@ -211,7 +214,7 @@ def main():
         all_windowed = tumble_stream.union(five_min_sliding_stream)
 
 
-        aggregate_sink = (
+        aggregate_sink_builder = (
             KafkaSink.builder()
                 .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
                 .set_record_serializer(
@@ -222,8 +225,9 @@ def main():
                 )
                 .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .set_transactional_id_prefix('orderbook-windowed')
-                .build()
+                # .build()
         )
+        aggregate_sink = apply_kafka_security(aggregate_sink_builder).build()
 
         # TEMPORARY UNTIL FINAL STREAM IS COMPLETE
         all_windowed.map(

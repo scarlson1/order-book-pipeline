@@ -14,6 +14,7 @@ Documentation:
 - Flink Watermarks: https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/
 """
 
+from common.utils import apply_kafka_security
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.datastream.connectors.kafka import (
     KafkaSource,
@@ -37,14 +38,7 @@ from src.ingestion.metrics_calculator import calculate_metrics
 # ===== Processing Functions ===== #
 
 def parse_orderbook(raw_message: str) -> dict:
-    """Parse raw JSON order book message.
-    
-    Args:
-        raw_message: JSON string from Redpanda
-        
-    Returns:
-        Parsed order book dictionary
-    """
+    """Parse raw JSON order book message."""
     return json.loads(raw_message)
 
 
@@ -59,15 +53,16 @@ def main():
     
     # Configure Kafka/Redpanda source
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/
-    source = (
+    source_builder = (
         KafkaSource.builder()
         .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
         .set_topics(settings.redpanda_topics['raw'])
         .set_group_id('flink-orderbook-processor')
         .set_starting_offsets(KafkaOffsetsInitializer.latest())
         .set_value_only_deserializer(SimpleStringSchema())
-        .build()
+        # .build()
     )
+    source = apply_kafka_security(source_builder).build()
     
     # Configure watermark strategy for event time processing
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/
@@ -101,7 +96,7 @@ def main():
     # )
     
     # Configure Kafka/Redpanda sink for metrics
-    metrics_sink = (
+    metrics_sink_builder = (
         KafkaSink.builder()
         .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
         .set_record_serializer(
@@ -110,8 +105,9 @@ def main():
             .set_value_serialization_schema(SimpleStringSchema())
             .build()
         )
-        .build()
+        # .build()
     )
+    metrics_sink = apply_kafka_security(metrics_sink_builder).build()
     
     # Configure Kafka/Redpanda sink for alerts (moved to orderbook_alert)
     # alerts_sink = (

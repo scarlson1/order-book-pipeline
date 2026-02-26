@@ -53,6 +53,7 @@ class RedisClient:
                 host=settings.redis_host,
                 port=settings.redis_port,
                 password=settings.redis_password,
+                ssl=settings.redis_ssl,
                 db=0,
                 decode_responses=True,  # Automatically decode bytes to strings
                 max_connections=20,
