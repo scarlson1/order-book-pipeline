@@ -21,7 +21,11 @@ upstash_region  = "us-east-1"
 redpanda_client_id          = "..."
 redpanda_client_secret      = "..."
 redpanda_resource_group_name = "orderbook-rg"
+# If resource group already exists, set its ID and Terraform will not create one.
+# redpanda_existing_resource_group_id = "..."
 redpanda_cluster_name       = "orderbook-serverless"
+# If cluster already exists, set its ID and Terraform will not create one.
+# redpanda_existing_cluster_id = "..."
 redpanda_serverless_region  = "us-east-1"
 redpanda_kafka_user         = "orderbook_app"
 redpanda_kafka_password     = "..."

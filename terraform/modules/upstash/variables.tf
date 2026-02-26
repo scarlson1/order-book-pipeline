@@ -7,11 +7,6 @@ variable "region" {
 }
 
 variable "tls" {
-  type    = string
-  default = "true"
-}
-
-variable "multi_zone" {
-  type    = string
-  default = "false"
+  type    = bool
+  default = true
 }

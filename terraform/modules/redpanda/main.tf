@@ -1,20 +1,30 @@
+terraform {
+  required_providers {
+    redpanda = {
+      source = "redpanda-data/redpanda"
+    }
+  }
+}
+
 resource "redpanda_resource_group" "this" {
-  name = var.resource_group_name
+  count = var.existing_resource_group_id == null && var.existing_cluster_id == null ? 1 : 0
+  name  = var.resource_group_name
 }
 
 resource "redpanda_serverless_cluster" "this" {
+  count             = var.existing_cluster_id == null ? 1 : 0
   name              = var.cluster_name
-  resource_group_id = redpanda_resource_group.this.id
+  resource_group_id = var.existing_resource_group_id != null ? var.existing_resource_group_id : redpanda_resource_group.this[0].id
   serverless_region = var.serverless_region
 }
 
 data "redpanda_cluster" "this" {
-  id = redpanda_serverless_cluster.this.id
+  id = var.existing_cluster_id != null ? var.existing_cluster_id : redpanda_serverless_cluster.this[0].id
 }
 
 resource "redpanda_user" "app_user" {
   name            = var.kafka_user
-  password        = var.kafka_password
+  password_wo     = var.kafka_password
   mechanism       = var.kafka_mechanism
   cluster_api_url = data.redpanda_cluster.this.cluster_api_url
   allow_deletion  = true

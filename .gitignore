@@ -38,6 +38,8 @@ terraform/**/crash.log
 terraform/**/*.tfplan
 terraform/**/*.tfvars
 terraform/**/*.auto.tfvars
+terraform/**/tfplan
+terraform/**/tfplan-oci
 
 # Keep examples committed
 !terraform/**/terraform.tfvars.example

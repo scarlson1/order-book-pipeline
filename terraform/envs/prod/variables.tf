@@ -12,7 +12,7 @@ variable "oci_region" { type = string }
 variable "oci_compartment_ocid" { type = string }
 variable "oci_ad_index" {
   type    = number
-  default = 0
+  default = 1
 }
 variable "oci_admin_cidr" { type = string }
 variable "oci_vm_shape" {
@@ -40,15 +40,15 @@ variable "cockroach_api_key" {
 }
 variable "cockroach_cluster_name" {
   type    = string
-  default = "orderbook-crdb"
+  default = "trading-pipeline"
 }
 variable "cockroach_cloud_provider" {
   type    = string
-  default = "AWS"
+  default = "GCP"
 }
 variable "cockroach_region" {
   type    = string
-  default = "us-east-1"
+  default = "us-central1"
 }
 
 # Upstash
@@ -59,7 +59,7 @@ variable "upstash_api_key" {
 }
 variable "upstash_region" {
   type    = string
-  default = "us-east-1"
+  default = "us-central1"
 }
 
 # Redpanda Cloud
@@ -73,19 +73,27 @@ variable "redpanda_client_secret" {
 }
 variable "redpanda_resource_group_name" {
   type    = string
-  default = "orderbook-rg"
+  default = "default"
+}
+variable "redpanda_existing_resource_group_id" {
+  type    = string
+  default = null
 }
 variable "redpanda_cluster_name" {
   type    = string
-  default = "orderbook-serverless"
+  default = "orderbook"
+}
+variable "redpanda_existing_cluster_id" {
+  type    = string
+  default = null
 }
 variable "redpanda_serverless_region" {
   type    = string
-  default = "us-east-1"
+  default = "us-central1"
 }
 variable "redpanda_kafka_user" {
   type    = string
-  default = "orderbook_app"
+  default = "orderbook_user"
 }
 variable "redpanda_kafka_password" {
   type      = string

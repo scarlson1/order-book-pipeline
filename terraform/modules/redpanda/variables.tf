@@ -2,8 +2,18 @@ variable "resource_group_name" {
   type = string
 }
 
+variable "existing_resource_group_id" {
+  type    = string
+  default = null
+}
+
 variable "cluster_name" {
   type = string
+}
+
+variable "existing_cluster_id" {
+  type    = string
+  default = null
 }
 
 variable "serverless_region" {

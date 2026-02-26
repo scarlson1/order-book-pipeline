@@ -135,6 +135,24 @@ terraform -chdir=terraform/envs/prod apply tfplan
 terraform -chdir=terraform/envs/prod output
 ```
 
+For your Upstash/Cockroach “already exists” errors, use option 2 (import):
+
+```bash
+terraform -chdir=terraform/envs/prod import module.upstash.upstash_redis_database.this <upstash-db-id>
+terraform -chdir=terraform/envs/prod import module.cockroach.cockroach_cluster.this <cockroach-cluster-id>
+```
+
+Or to only run the OCI portion:
+
+```bash
+terraform -chdir=terraform/envs/prod plan \
+  -var-file=terraform.tfvars \
+  -target=module.oci_vm \
+  -out=tfplan-oci
+
+terraform -chdir=terraform/envs/prod apply tfplan-oci
+```
+
 4. Record VM public IP from output.
 
 Recommended OCI shape for this compose stack:

@@ -1,3 +1,11 @@
+terraform {
+  required_providers {
+    cockroach = {
+      source = "cockroachdb/cockroach"
+    }
+  }
+}
+
 resource "cockroach_cluster" "this" {
   name              = var.cluster_name
   cloud_provider    = var.cloud_provider

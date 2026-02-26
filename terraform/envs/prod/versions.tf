@@ -4,19 +4,19 @@ terraform {
   required_providers {
     oci = {
       source  = "oracle/oci"
-      version = "~> 7.0"
+      version = "~> 8.2"
     }
     cockroach = {
       source  = "cockroachdb/cockroach"
-      version = "~> 1.13"
+      version = "~> 1.17"
     }
     upstash = {
       source  = "upstash/upstash"
-      version = "~> 1.8"
+      version = ">= 1.0.0, < 2.0.0"
     }
     redpanda = {
       source  = "redpanda-data/redpanda"
-      version = "~> 1.0"
+      version = "~> 1.6"
     }
   }
 }

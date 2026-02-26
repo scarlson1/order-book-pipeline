@@ -1,5 +1,5 @@
 output "cluster_id" {
-  value = redpanda_serverless_cluster.this.id
+  value = var.existing_cluster_id != null ? var.existing_cluster_id : redpanda_serverless_cluster.this[0].id
 }
 
 output "cluster_api_url" {

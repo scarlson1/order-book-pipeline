@@ -27,17 +27,18 @@ module "upstash" {
 
   database_name = "${var.project_name}-redis"
   region        = var.upstash_region
-  tls           = "true"
-  multi_zone    = "false"
+  tls           = true
 }
 
 module "redpanda" {
   source = "../../modules/redpanda"
 
-  resource_group_name = var.redpanda_resource_group_name
-  cluster_name        = var.redpanda_cluster_name
-  serverless_region   = var.redpanda_serverless_region
-  kafka_user          = var.redpanda_kafka_user
-  kafka_password      = var.redpanda_kafka_password
-  topic_prefix        = var.redpanda_topic_prefix
+  resource_group_name        = var.redpanda_resource_group_name
+  existing_resource_group_id = var.redpanda_existing_resource_group_id
+  cluster_name               = var.redpanda_cluster_name
+  existing_cluster_id        = var.redpanda_existing_cluster_id
+  serverless_region          = var.redpanda_serverless_region
+  kafka_user                 = var.redpanda_kafka_user
+  kafka_password             = var.redpanda_kafka_password
+  topic_prefix               = var.redpanda_topic_prefix
 }
