@@ -1,0 +1,14 @@
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-plugin
+  - git
+  - curl
+  - jq
+
+runcmd:
+  - systemctl enable --now docker
+  - usermod -aG docker ubuntu
+  - mkdir -p /opt/order-book-pipeline
+  - chown -R ubuntu:ubuntu /opt/order-book-pipeline

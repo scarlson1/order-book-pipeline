@@ -1,0 +1,31 @@
+name: Deploy OCI Runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'compose.oci.yml'
+      - '.env.oci.example'
+      - 'Dockerfile.ingestion'
+      - 'Dockerfile.consumers'
+      - 'Dockerfile.flink'
+      - '.github/workflows/deploy-oci.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.OCI_VM_HOST }}
+          username: ${{ secrets.OCI_VM_USER }}
+          key: ${{ secrets.OCI_VM_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/order-book-pipeline
+            git fetch --all
+            git checkout main
+            git pull --ff-only
+            docker compose -f compose.oci.yml --env-file .env.oci up -d --build ingestion consumers flink-jobmanager flink-taskmanager flink-job-submitter
+            docker image prune -f

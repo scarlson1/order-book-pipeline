@@ -15,6 +15,17 @@ Everything AFTER publishing is handled by Flink:
         ↓
     TimescaleDB + Redis + Dashboard
 
+- DOWNSAMPLING_ENABLED=true (default):
+  - Buffers ticks for N seconds (default 60s = 1 minute)
+  - Writes 1 aggregated metric per symbol per bucket
+  - Storage: ~2 MB/day with 3 symbols
+  - Retention: 115+ days on 250MB free tier
+  
+- DOWNSAMPLING_ENABLED=false:
+  - Writes every tick immediately
+  - Storage: ~1.3 GB/day with 3 symbols
+  - Retention: 3 hours on 250MB free tier
+
 Documentation:
 - kafka-python-ng: https://kafka-python.readthedocs.io/en/master/
 - asyncio: https://docs.python.org/3/library/asyncio.html
@@ -30,6 +41,8 @@ from src.common.redpanda_client import RedpandaProducer
 from src.config import settings
 from src.ingestion.websocket_client import BinanceWebSocketClient
 from src.ingestion.orderbook_parser import OrderBookParser
+
+# from src.ingestion.downsampling import OrderbookDownsampler
 
 
 class IngestionService:
@@ -188,10 +201,7 @@ class IngestionService:
 
 async def main() -> None:
     """Main entry point for the ingestion service."""
-    logger.info(f"Starting {settings.app_name}")
-    logger.info(f"Environment: {settings.environment}")
-    logger.info(f"Monitoring symbols: {settings.symbol_list}")
-    logger.info(f"Database: {settings.postgres_host}:{settings.postgres_port}")
+    settings.log_config()
 
     service = IngestionService()
     setup_signal_handlers(service)

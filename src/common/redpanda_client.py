@@ -7,6 +7,38 @@ from loguru import logger
 
 from src.config import settings
 
+
+def _kafka_security_config() -> Dict[str, Any]:
+    """Build kafka-python auth/TLS config from settings."""
+    protocol = settings.redpanda_security_protocol.upper()
+    config: Dict[str, Any] = {'security_protocol': protocol}
+
+    if protocol in {'SASL_PLAINTEXT', 'SASL_SSL'}:
+        if (
+            not settings.redpanda_sasl_mechanism
+            or not settings.redpanda_username
+            or not settings.redpanda_password
+        ):
+            raise ValueError(
+                "SASL protocol selected but REDPANDA_SASL_MECHANISM / "
+                "REDPANDA_USERNAME / REDPANDA_PASSWORD are not fully configured."
+            )
+
+        config['sasl_mechanism'] = settings.redpanda_sasl_mechanism
+        config['sasl_plain_username'] = settings.redpanda_username
+        config['sasl_plain_password'] = settings.redpanda_password
+
+    if protocol in {'SSL', 'SASL_SSL'}:
+        config['ssl_check_hostname'] = settings.redpanda_ssl_check_hostname
+        if settings.redpanda_ssl_cafile:
+            config['ssl_cafile'] = settings.redpanda_ssl_cafile
+        if settings.redpanda_ssl_certfile:
+            config['ssl_certfile'] = settings.redpanda_ssl_certfile
+        if settings.redpanda_ssl_keyfile:
+            config['ssl_keyfile'] = settings.redpanda_ssl_keyfile
+
+    return config
+
 class RedpandaProducer:
     """Async Redpanda/Kafka producer for publishing messages.
     
@@ -59,7 +91,8 @@ class RedpandaProducer:
             # run sync KafkaProducer creation in executor (don't block event loop)
             self.producer = await asyncio.to_thread(
                 lambda: KafkaProducer(
-                    bootstrap_servers=[settings.redpanda_bootstrap_servers],
+                    bootstrap_servers=settings.redpanda_bootstrap_server_list,
+                    **_kafka_security_config(),
 
                     # serialization
                     # JSON serializer: dict → JSON string → UTF-8 bytes
@@ -314,7 +347,8 @@ class RedpandaConsumer:
             self.consumer = await asyncio.to_thread(
                 lambda: KafkaConsumer(
                     *self.topics,
-                    bootstrap_servers=settings.redpanda_bootstrap_servers,
+                    bootstrap_servers=settings.redpanda_bootstrap_server_list,
+                    **_kafka_security_config(),
 
                     # consumer group settings
                     group_id=self.group_id,

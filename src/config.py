@@ -1,6 +1,7 @@
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
+from loguru import logger
 # from pydantic import SecretStr
 
 class Settings(BaseSettings):
@@ -25,9 +26,22 @@ class Settings(BaseSettings):
     
     # ===== Redpanda/Kafka Settings ===== #
     redpanda_enabled: bool = True
-    # redpanda_bootstrap_servers: str
-    redpanda_service: str
-    redpanda_bootstrap_port: str
+    # Managed Kafka usually provides a comma-separated bootstrap list.
+    redpanda_bootstrap_servers_env: str | None = Field(
+        default=None,
+        validation_alias='REDPANDA_BOOTSTRAP_SERVERS',
+    )
+    # Local fallback (Docker network style: service:port)
+    redpanda_service: str = "redpanda"
+    redpanda_bootstrap_port: str = "9092"
+    redpanda_security_protocol: str = "PLAINTEXT"
+    redpanda_sasl_mechanism: str | None = None
+    redpanda_username: str | None = None
+    redpanda_password: str | None = None
+    redpanda_ssl_cafile: str | None = None
+    redpanda_ssl_certfile: str | None = None
+    redpanda_ssl_keyfile: str | None = None
+    redpanda_ssl_check_hostname: bool = True
     # redpanda_admin_port: int = 19644
     redpanda_admin_url: str = 'http://redpanda:9644'
     redpanda_kafka_port: int = 19092
@@ -39,6 +53,9 @@ class Settings(BaseSettings):
     flink_parallelism: int
     flink_port: int = 8081
     # flink_ui_url: str # = "http://localhost:8081"
+
+    downsampling_enabled: bool
+    downsample_bucket_seconds: int
 
     # ===== Binance WebSocket Settings ===== #
     binance_ws_url: str 
@@ -97,7 +114,7 @@ class Settings(BaseSettings):
         """
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f'@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}'
         )
 
     @property
@@ -114,7 +131,18 @@ class Settings(BaseSettings):
     @property
     def redpanda_bootstrap_servers(self) -> str:
         """Get Redpanda bootstrap servers """
+        if self.redpanda_bootstrap_servers_env:
+            return self.redpanda_bootstrap_servers_env.strip()
         return f'{self.redpanda_service}:{self.redpanda_bootstrap_port}'
+
+    @property
+    def redpanda_bootstrap_server_list(self) -> List[str]:
+        """Get bootstrap servers as a list for kafka-python."""
+        return [
+            s.strip()
+            for s in self.redpanda_bootstrap_servers.split(',')
+            if s.strip()
+        ]
 
     # @property
     # def redpanda_admin_url(self) -> str:
@@ -155,6 +183,40 @@ class Settings(BaseSettings):
             True if development, False otherwise
         """
         return self.environment.lower() == "development"
+
+    def log_config(self): 
+        """Log configuration at startup."""
+        logger.info("=" * 60)
+        logger.info("ORDER BOOK PIPELINE CONFIGURATION")
+        logger.info(f"Starting {settings.app_name}")
+        logger.info(f"Environment: {settings.environment}")
+        logger.info("=" * 60)
+        logger.info(f"Symbols: {self.symbol_list}")
+        logger.info(f"Binance URL: {self.binance_ws_url}")
+        logger.info(f"Database: {self.postgres_host}:{self.postgres_port}/{self.postgres_db}")
+        logger.info(f"Redis: {self.redis_host}:{self.redis_port}")
+        logger.info(f"Kafka: {self.redpanda_bootstrap_servers}")
+        logger.info("-" * 60)
+        logger.info("DOWNSAMPLING CONFIGURATION")
+        logger.info("-" * 60)
+        logger.info(f"Downsampling Enabled: {self.downsampling_enabled}")
+        logger.info(f"Bucket Size: {self.downsample_bucket_seconds} seconds")
+        # logger.info(f"Depth: {self.downsample_depth} levels")
+        
+        if self.downsampling_enabled:
+            estimated_storage = (
+                len(self.symbols) * 500 * (86400 / self.downsample_bucket_seconds)
+            ) / (1024 * 1024)  # Convert to MB/day
+            logger.info(f"Estimated Storage: {estimated_storage:.2f} MB/day")
+            days_retention = 250 / estimated_storage if estimated_storage > 0 else float('inf')
+            logger.info(f"Storage Retention (250MB): {days_retention:.0f} days")
+        else:
+            logger.warning("⚠️  Downsampling DISABLED - Raw ticks mode (high storage!)")
+            # logger.warning("    For production, set DOWNSAMPLING_ENABLED=true")
+        
+        logger.info("-" * 60)
+        logger.info(f"Alert Thresholds: HIGH={self.alert_threshold_high}, MEDIUM={self.alert_threshold_medium}")
+        logger.info("=" * 60)
 
     # ===== Field Validators =====
 
@@ -205,8 +267,27 @@ class Settings(BaseSettings):
 
     @model_validator(mode='after')
     def validate_config(self) -> 'Settings':
-        if self.redpanda_enabled and not self.redpanda_bootstrap_servers:
+        if self.redpanda_enabled and not self.redpanda_bootstrap_server_list:
             raise ValueError("Redpanda requires bootstrap_servers")
+
+        security_protocol = self.redpanda_security_protocol.upper()
+        allowed_protocols = {'PLAINTEXT', 'SSL', 'SASL_PLAINTEXT', 'SASL_SSL'}
+        if security_protocol not in allowed_protocols:
+            raise ValueError(
+                f"REDPANDA_SECURITY_PROTOCOL must be one of {allowed_protocols}, "
+                f"got {self.redpanda_security_protocol}"
+            )
+
+        if security_protocol in {'SASL_PLAINTEXT', 'SASL_SSL'}:
+            if not self.redpanda_sasl_mechanism:
+                raise ValueError(
+                    "REDPANDA_SASL_MECHANISM is required for SASL security protocols"
+                )
+            if not self.redpanda_username or not self.redpanda_password:
+                raise ValueError(
+                    "REDPANDA_USERNAME and REDPANDA_PASSWORD are required for SASL "
+                    "security protocols"
+                )
         return self
 
 # print(Settings().model_dump())

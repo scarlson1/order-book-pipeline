@@ -526,6 +526,40 @@ See `Dockerfile.flink` - this is the current implimentation.
 - `Dockerfile.flink` to build custom image that downloads the connectors
 - results in larger docker image, but easier to maintain / removes dev setup step
 
+## Deployment
+
+TODO: deployment docs
+
+Free tier services:
+
+| Local Container | Production                 | Type           |
+| --------------- | -------------------------- | -------------- |
+| timescaledb     | CockroachDB Serverless     | Managed DB     |
+| redis           | Upstash Redis              | Managed cache  |
+| redpanda        | Upstash Kafka (deprecated) | Managed broker |
+| ingestion       | Render Web Service         | Python app     |
+| consumers       | Render Worker              | Python app     |
+| flink           | GCP Dataflow OR remove     | Complex JVM    |
+| dashboard       | Streamlit Cloud            | Python app     |
+| grafana/pgadmin | DELETE                     | Dev tools only |
+
+- DB: CockroachDB or Supabase
+- Redis: Upstash Redis
+- Redpanda: Aiven Kafka Free (replace Upstash Kafka) [redpanda serverless available](https://www.redpanda.com/try-data-streaming) ?? (or small GCP VM self-hosted)
+- Ingestion: ??
+- Consumers: ??
+- Flink: ??
+- Dashboard: Streamlit
+
+Note on TimescaleDB:
+
+- See feature [comparison between TimescaleDB licenses](https://www.tigerdata.com/docs/about/latest/timescaledb-editions)
+- Not currently using any TimescaleDB features not included in the Apache license
+- Easy to convert current code
+  - `time_bucket('1 hour', ts)` -> `DATE_TRUNC('hour', ts)`, etc.
+  - Remove `CREATE HYPERTABLE` calls
+  - Remove compression settings
+
 ## Potential Features Roadmap
 
 - Add data sources

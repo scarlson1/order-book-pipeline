@@ -1,0 +1,94 @@
+services:
+  ingestion:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingestion
+    env_file:
+      - .env.oci
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  consumers:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumers
+    env_file:
+      - .env.oci
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  flink-jobmanager:
+    build:
+      context: .
+      dockerfile: Dockerfile.flink
+    image: orderbook-flink:latest
+    command: jobmanager
+    env_file:
+      - .env.oci
+    environment:
+      - PYTHONPATH=/opt:/opt/src
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        rest.port: 8081
+        rest.bind-address: 0.0.0.0
+        taskmanager.numberOfTaskSlots: 2
+        parallelism.default: 1
+        jobmanager.memory.process.size: 1600m
+        state.backend.type: rocksdb
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+    volumes:
+      - flink_checkpoints:/opt/flink/checkpoints
+      - ./src:/opt/src
+      - .:/opt/flink/usrlib
+    ports:
+      - '8081:8081'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:8081/overview || exit 1']
+      interval: 20s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  flink-taskmanager:
+    image: orderbook-flink:latest
+    command: taskmanager
+    env_file:
+      - .env.oci
+    environment:
+      - PYTHONPATH=/opt:/opt/src
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
+        taskmanager.memory.process.size: 2048m
+        state.backend.type: rocksdb
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+    volumes:
+      - flink_checkpoints:/opt/flink/checkpoints
+      - ./src:/opt/src
+    depends_on:
+      - flink-jobmanager
+    restart: unless-stopped
+
+  flink-job-submitter:
+    image: orderbook-flink:latest
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    volumes:
+      - ./src:/opt/src
+    entrypoint: >
+      bash -lc '
+        set -e
+        until /opt/flink/bin/flink list -m flink-jobmanager:8081 >/dev/null 2>&1; do sleep 2; done
+        /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d
+        /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d
+        /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d
+      '
+    restart: 'no'
+
+volumes:
+  flink_checkpoints:

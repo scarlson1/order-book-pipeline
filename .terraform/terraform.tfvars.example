@@ -1,0 +1,27 @@
+project_name = "orderbook-pipeline"
+
+oci_tenancy_ocid     = "ocid1.tenancy.oc1.."
+oci_user_ocid        = "ocid1.user.oc1.."
+oci_fingerprint      = "aa:bb:cc:..."
+oci_private_key_path = "~/.oci/oci_api_key.pem"
+oci_region           = "us-chicago-1"
+oci_compartment_ocid = "ocid1.compartment.oc1.."
+oci_admin_cidr       = "YOUR_IP/32"
+oci_ssh_public_key   = "ssh-ed25519 AAAA..."
+
+cockroach_api_key        = "..."
+cockroach_cluster_name   = "orderbook-crdb"
+cockroach_cloud_provider = "AWS"
+cockroach_region         = "us-east-1"
+
+upstash_email   = "you@example.com"
+upstash_api_key = "..."
+upstash_region  = "us-east-1"
+
+redpanda_client_id       = "..."
+redpanda_client_secret   = "..."
+redpanda_resource_group_name = "orderbook-rg"
+redpanda_cluster_name    = "orderbook-serverless"
+redpanda_serverless_region = "us-east-1"
+redpanda_kafka_user      = "orderbook_app"
+redpanda_kafka_password  = "..."

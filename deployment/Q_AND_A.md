@@ -233,7 +233,7 @@ Binance (free, real-time)
 Render Ingestion (free)
 ├─ Downsample to 1-min buckets
 ├─ CockroachDB (free) ← Store aggregates
-├─ Upstash Kafka (free) ← Distribute events
+├─ ~Upstash Kafka (free)~ ← Distribute events (deprecated)
 └─ Upstash Redis (free) ← Cache
 ↓
 Render Consumer (free)
