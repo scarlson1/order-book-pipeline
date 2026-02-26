@@ -127,6 +127,65 @@ Edit `.env` to customize:
 SYMBOLS=BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,ADAUSDT
 ```
 
+### Stream Rate
+
+There are a couple options to adjust the stream rate, which have a large impact on database size. The default 100ms rate results in 10 datapoints/symbol/second. With 3 symbols, that's ~2GB/day. There are two options to aggregate/reduce the rate:
+
+- `UPDATE_SPEED`: change the update speed for the Binance websocket (`100ms` -> `1000ms`)
+- `DOWNSAMPLING_ENABLED`: this will enable [`src/ingestion/downsampling.py`](./src/ingestion/downsampling.py), which aggregates data before passing along the data to Redpanda
+
+**Downsampling config scenarios:**
+
+```bash
+DOWNSAMPLING_ENABLED=false
+```
+
+- Publishes every tick to Redpanda
+- Flink processes raw ticks
+- High storage usage but good for debugging
+- Use: Testing, development
+
+**Scenario 2: Free Tier (Minimal Storage)**
+
+```bash
+DOWNSAMPLING_ENABLED=true
+DOWNSAMPLE_BUCKET_SECONDS=60
+DOWNSAMPLE_PUBLISH_TO_DB=false
+DOWNSAMPLE_PUBLISH_TO_REDIS=true
+```
+
+- 1 metric per symbol per minute
+- ~2 MB/day for 3 symbols
+- 115+ days retention on 250MB
+- Use: Limited storage, free tier
+
+**Scenario 3: Production (Full Data)**
+
+```bash
+DOWNSAMPLING_ENABLED=true
+DOWNSAMPLE_BUCKET_SECONDS=60
+DOWNSAMPLE_PUBLISH_TO_DB=true
+DOWNSAMPLE_PUBLISH_TO_REDIS=true
+```
+
+- Store metrics in both DB and Redis
+- Full data preservation
+- ~5 MB/day for 3 symbols
+- Use: Production with good storage
+
+**Scenario 4: High Volume (Aggressive)**
+
+```bash
+DOWNSAMPLING_ENABLED=true
+DOWNSAMPLE_BUCKET_SECONDS=300
+DOWNSAMPLE_PUBLISH_TO_DB=true
+DOWNSAMPLE_PUBLISH_TO_REDIS=false
+```
+
+- 1 metric per symbol per 5 minutes
+- ~0.5 MB/day for 10 symbols
+- Use: Many symbols, minimal storage
+
 ### Alert Thresholds
 
 ```bash

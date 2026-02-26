@@ -6,6 +6,8 @@ on:
 jobs:
   apply:
     runs-on: ubuntu-latest
+    # TODO: enable workflow
+    if: false
     env:
       TF_VAR_oci_tenancy_ocid: ${{ secrets.TF_VAR_OCI_TENANCY_OCID }}
       TF_VAR_oci_user_ocid: ${{ secrets.TF_VAR_OCI_USER_OCID }}

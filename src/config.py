@@ -54,8 +54,8 @@ class Settings(BaseSettings):
     flink_port: int = 8081
     # flink_ui_url: str # = "http://localhost:8081"
 
-    downsampling_enabled: bool
-    downsample_bucket_seconds: int
+    # downsampling_enabled: bool
+    # downsample_bucket_seconds: int
 
     # ===== Binance WebSocket Settings ===== #
     binance_ws_url: str 
