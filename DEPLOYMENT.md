@@ -1,6 +1,7 @@
 # Deployment Guide
 
 This guide deploys the app using:
+
 - CockroachDB (SQL)
 - Upstash Redis (cache)
 - Redpanda Serverless (Kafka-compatible broker)
@@ -24,26 +25,45 @@ flowchart LR
 
 ## What Runs Where
 
-| Component | Location |
-| --- | --- |
-| Ingestion | OCI VM (`compose.oci.yml`) |
-| Consumers | OCI VM (`compose.oci.yml`) |
+| Component                              | Location                   |
+| -------------------------------------- | -------------------------- |
+| Ingestion                              | OCI VM (`compose.oci.yml`) |
+| Consumers                              | OCI VM (`compose.oci.yml`) |
 | Flink JobManager/TaskManager/Submitter | OCI VM (`compose.oci.yml`) |
-| SQL database | CockroachDB |
-| Redis cache | Upstash Redis |
-| Kafka broker | Redpanda Serverless |
-| Dashboard | Streamlit Community Cloud |
+| SQL database                           | CockroachDB                |
+| Redis cache                            | Upstash Redis              |
+| Kafka broker                           | Redpanda Serverless        |
+| Dashboard                              | Streamlit Community Cloud  |
 
 ## Prerequisites
 
 1. Accounts: OCI, CockroachDB, Upstash, Redpanda Cloud, GitHub, Streamlit Cloud.
 2. Local tools: `terraform`, `git`, `ssh`.
 3. Repo files already present:
-   - `.terraform/*`
+   - `terraform/envs/prod/*`
+   - `terraform/modules/*`
    - `compose.oci.yml`
    - `.env.oci.example`
    - `.github/workflows/infra-apply.yml`
    - `.github/workflows/deploy-oci.yml`
+
+> **Note:** if cockroachDB is unable to support timescaleDB, need to update code
+> **Changes needed:**
+>
+> 1. Replace `time_bucket('1 hour', ts)` with `DATE_TRUNC('hour', ts)` (5-10 queries)
+> 2. Remove `CREATE HYPERTABLE` calls (1-2 lines)
+> 3. Remove compression settings (1-2 lines)
+>    **Example:**
+>
+> ```sql
+> -- OLD (TimescaleDB):
+> SELECT time_bucket('5 min', timestamp) as bucket, AVG(imbalance)
+> FROM metrics GROUP BY bucket
+>
+> -- NEW (CockroachDB/PostgreSQL):
+> SELECT DATE_TRUNC('minute', timestamp) as bucket, AVG(imbalance)
+> FROM metrics GROUP BY DATE_TRUNC('minute', timestamp)
+> ```
 
 ## Step 1: Create Managed Services
 
@@ -79,6 +99,7 @@ Python producer/consumer supports SASL/TLS already.
 Flink jobs must also set Kafka security properties for Redpanda Serverless.
 
 For each `KafkaSource.builder()` and `KafkaSink.builder()` in:
+
 - `src/jobs/orderbook_metrics.py`
 - `src/jobs/orderbook_alerts.py`
 - `src/jobs/orderbook_windows.py`
@@ -101,20 +122,21 @@ If this step is skipped, Flink will fail to connect to Redpanda Serverless.
 ## Step 4: Provision OCI VM with Terraform
 
 1. Create tfvars from example:
-   - `cp .terraform/terraform.tfvars.example .terraform/terraform.tfvars`
+   - `cp terraform/envs/prod/terraform.tfvars.example terraform/envs/prod/terraform.tfvars`
 2. Populate all required values.
 3. Run:
 
 ```bash
-terraform -chdir=.terraform init
-terraform -chdir=.terraform plan -var-file=terraform.tfvars -out=tfplan
-terraform -chdir=.terraform apply tfplan
-terraform -chdir=.terraform output
+terraform -chdir=terraform/envs/prod init
+terraform -chdir=terraform/envs/prod plan -var-file=terraform.tfvars -out=tfplan
+terraform -chdir=terraform/envs/prod apply tfplan
+terraform -chdir=terraform/envs/prod output
 ```
 
 4. Record VM public IP from output.
 
 Recommended OCI shape for this compose stack:
+
 - `VM.Standard.A1.Flex`
 - `2 OCPU / 12 GB RAM / 100 GB boot volume`
 
@@ -167,11 +189,13 @@ curl http://localhost:8081/overview
 ## Step 7: CI/CD Setup (Hybrid)
 
 ### Infra workflow (manual)
+
 - Workflow: `.github/workflows/infra-apply.yml`
 - Trigger: `workflow_dispatch`
 - Purpose: Terraform `init/plan/apply`
 
 Required GitHub secrets:
+
 - `OCI_API_PRIVATE_KEY_PEM`
 - `TF_VAR_OCI_TENANCY_OCID`
 - `TF_VAR_OCI_USER_OCID`
@@ -188,11 +212,13 @@ Required GitHub secrets:
 - `TF_VAR_REDPANDA_KAFKA_PASSWORD`
 
 ### App deploy workflow (on push to main)
+
 - Workflow: `.github/workflows/deploy-oci.yml`
 - Trigger paths: `src/**`, `compose.oci.yml`, Dockerfiles, workflow file
 - Purpose: SSH into VM and run `docker compose up -d --build`
 
 Required GitHub secrets:
+
 - `OCI_VM_HOST`
 - `OCI_VM_USER`
 - `OCI_VM_SSH_KEY`
@@ -200,6 +226,7 @@ Required GitHub secrets:
 ## Rollback
 
 1. On VM:
+
 ```bash
 cd /opt/order-book-pipeline
 git log --oneline -n 5

@@ -123,16 +123,20 @@ Edit `.env` to customize:
 
 ### Symbols to Monitor
 
+> Note: `SYMBOLS` and `UPDATE_SPEED` have significant impact on resources (DB storage, Flink VM)
+
 ```bash
-SYMBOLS=BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,ADAUSDT
+SYMBOLS=BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT
 ```
 
-### Stream Rate
+### Stream Rate & Downsampling
 
 There are a couple options to adjust the stream rate, which have a large impact on database size. The default 100ms rate results in 10 datapoints/symbol/second. With 3 symbols, that's ~2GB/day. There are two options to aggregate/reduce the rate:
 
 - `UPDATE_SPEED`: change the update speed for the Binance websocket (`100ms` -> `1000ms`)
 - `DOWNSAMPLING_ENABLED`: this will enable [`src/ingestion/downsampling.py`](./src/ingestion/downsampling.py), which aggregates data before passing along the data to Redpanda
+
+> Note: downsample code was added in `src/ingestion/downsample.py`, but not integrated into the app. Thinking it'd be better to keep the data output to the same tables / data schema (& keep the flow through Flink). May be better to use Flink window functions if necessary to aggregate.
 
 **Downsampling config scenarios:**
 
@@ -185,6 +189,55 @@ DOWNSAMPLE_PUBLISH_TO_REDIS=false
 - 1 metric per symbol per 5 minutes
 - ~0.5 MB/day for 10 symbols
 - Use: Many symbols, minimal storage
+
+**Storage Calculations**
+
+UPDATE_SPEED=100ms
+├─ Messages/sec: 30 (3 symbols × 10/sec)
+├─ Daily storage: 1.3 GB
+├─ 10GB limit: 7.7 days ❌
+└─ Use case: Development only
+
+UPDATE_SPEED=1000ms
+├─ Messages/sec: 3 (3 symbols × 1/sec)
+├─ Daily storage: 130 MB
+├─ 10GB limit: 77 days ✓
+└─ Trade-off: 10x slower updates
+
+Downsampling Only (60s bucket)
+├─ Metrics/day: 4,320 (1 per symbol per 60s)
+├─ Daily storage: 8.6 MB
+├─ 10GB limit: 1,162 days (3.2 years) ✓✓
+└─ Trade-off: No Flink, aggregated only
+
+UPDATE_SPEED=1000ms + Downsampling
+├─ Raw + metrics: 140 MB/day
+├─ 10GB limit: 71 days ✓
+└─ Trade-off: Complexity, still limited
+
+**Data shapes**
+
+Raw Tick (OrderBookSnapshot → Redpanda)
+├─ Structure: [[bid_price, qty], [ask_price, qty], ...]
+├─ Size: ~500 bytes per message
+├─ Frequency: 10/sec (with UPDATE_SPEED=100ms)
+├─ Fields: ~20 bid levels + ~20 ask levels
+└─ Table: orderbook_raw (if stored)
+
+Flink Output (OrderBookMetrics → orderbook_metrics)
+├─ Structure: 18 numeric fields (imbalance, spread, etc.)
+├─ Size: ~200 bytes
+├─ Frequency: 1 per tick (same as input)
+├─ Fields: mid_price, imbalance_ratio, spread_bps, etc.
+└─ Table: orderbook_metrics (existing)
+
+Downsampled Metric (DownsampledMetric → Redis/DB)
+├─ Structure: 18 numeric fields (PRE-AGGREGATED)
+├─ Size: ~2 KB per row
+├─ Frequency: 1 per 60 seconds per symbol
+├─ Fields: mean/min/max/std of imbalance, spread, OHLC, etc.
+├─ Table: orderbook_metrics_downsampled (NEW)
+└─ Contains: 600 ticks summarized in 1 row
 
 ### Alert Thresholds
 

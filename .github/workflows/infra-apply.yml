@@ -24,7 +24,7 @@ jobs:
       TF_VAR_redpanda_kafka_password: ${{ secrets.TF_VAR_REDPANDA_KAFKA_PASSWORD }}
     defaults:
       run:
-        working-directory: .terraform
+        working-directory: terraform/envs/prod
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3

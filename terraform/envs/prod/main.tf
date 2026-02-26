@@ -1,0 +1,43 @@
+module "oci_vm" {
+  source = "../../modules/oci_vm"
+
+  project_name     = var.project_name
+  tenancy_ocid     = var.oci_tenancy_ocid
+  compartment_ocid = var.oci_compartment_ocid
+  ad_index         = var.oci_ad_index
+  admin_cidr       = var.oci_admin_cidr
+  vm_shape         = var.oci_vm_shape
+  vm_ocpus         = var.oci_vm_ocpus
+  vm_memory_gb     = var.oci_vm_memory_gb
+  boot_volume_gb   = var.oci_boot_volume_gb
+  ssh_public_key   = var.oci_ssh_public_key
+}
+
+module "cockroach" {
+  source = "../../modules/cockroach"
+
+  cluster_name      = var.cockroach_cluster_name
+  cloud_provider    = var.cockroach_cloud_provider
+  region            = var.cockroach_region
+  delete_protection = false
+}
+
+module "upstash" {
+  source = "../../modules/upstash"
+
+  database_name = "${var.project_name}-redis"
+  region        = var.upstash_region
+  tls           = "true"
+  multi_zone    = "false"
+}
+
+module "redpanda" {
+  source = "../../modules/redpanda"
+
+  resource_group_name = var.redpanda_resource_group_name
+  cluster_name        = var.redpanda_cluster_name
+  serverless_region   = var.redpanda_serverless_region
+  kafka_user          = var.redpanda_kafka_user
+  kafka_password      = var.redpanda_kafka_password
+  topic_prefix        = var.redpanda_topic_prefix
+}

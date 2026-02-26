@@ -29,17 +29,18 @@ ENV/
 .env.local
 .env.oci
 
-.terraform/.terraform/
-.terraform/*.tfstate
-.terraform/*.tfstate.*
-.terraform/.terraform.tfstate.lock.info
-.terraform/crash.log
-.terraform/*.tfplan
-.terraform/*.tfvars
-.terraform/*.auto.tfvars
+# Terraform runtime artifacts
+**/.terraform/
+terraform/**/*.tfstate
+terraform/**/*.tfstate.*
+terraform/**/.terraform.tfstate.lock.info
+terraform/**/crash.log
+terraform/**/*.tfplan
+terraform/**/*.tfvars
+terraform/**/*.auto.tfvars
 
 # Keep examples committed
-!.terraform/terraform.tfvars.example
+!terraform/**/terraform.tfvars.example
 
 # Keys/certs
 *.pem
