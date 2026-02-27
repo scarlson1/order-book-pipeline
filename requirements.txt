@@ -12,7 +12,7 @@ sqlalchemy==2.0.23
 asyncpg==0.29.0
 
 # Redis - pure Python (without hiredis for no compilation)
-redis==5.0.1
+redis>=5.0.3
 
 # Redpanda/Kafka client
 kafka-python-ng==2.2.2
