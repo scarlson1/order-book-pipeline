@@ -48,22 +48,16 @@ class RedisClient:
         logger.info(f"Connecting to Redis at {settings.redis_host}:{settings.redis_port}")
 
         try:
-            # Create connection pool
-            pool = redis.ConnectionPool(
-                host=settings.redis_host,
-                port=settings.redis_port,
-                password=settings.redis_password,
-                ssl=settings.redis_ssl,
-                db=0,
-                decode_responses=True,  # Automatically decode bytes to strings
+            # Use URL-based config so `rediss://` enables TLS without
+            # passing backend-specific SSL kwargs.
+            self.client = redis.from_url(
+                settings.redis_url,
+                decode_responses=True,
                 max_connections=20,
                 socket_keepalive=True,
                 socket_connect_timeout=5,
                 retry_on_timeout=True,
             )
-            
-            # Create client with pool
-            self.client = redis.Redis(connection_pool=pool)
             
             # Test connection
             await self.client.ping()
