@@ -135,7 +135,7 @@ terraform -chdir=terraform/envs/prod apply tfplan
 terraform -chdir=terraform/envs/prod output
 ```
 
-For your Upstash/Cockroach “already exists” errors, use option 2 (import):
+For your Upstash/Cockroach “already exists” errors (import):
 
 ```bash
 terraform -chdir=terraform/envs/prod import module.upstash.upstash_redis_database.this <upstash-db-id>
