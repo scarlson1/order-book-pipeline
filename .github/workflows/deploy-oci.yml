@@ -15,8 +15,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # TODO: enable workflow
-    if: false
     steps:
       - uses: appleboy/ssh-action@v1.2.0
         with:

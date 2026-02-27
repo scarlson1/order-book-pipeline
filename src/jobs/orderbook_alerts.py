@@ -17,7 +17,7 @@ Documentation:
 
 import json
 from typing import Tuple
-from common.utils import apply_kafka_security
+from src.common.utils import apply_kafka_security
 from loguru import logger
 from pydantic import ValidationError
 from pyflink.datastream import StreamExecutionEnvironment
@@ -36,8 +36,8 @@ from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.time import Time
 from pyflink.common.typeinfo import Types
 
-from common.models import Alert, AlertType, OrderBookMetrics, Severity
-from config import settings
+from src.common.models import Alert, AlertType, OrderBookMetrics, Severity
+from src.config import settings
 
 # TODO: which parts need to be calculated from the windowed metrics ??
 

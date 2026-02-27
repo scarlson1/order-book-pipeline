@@ -7,7 +7,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from common.utils import apply_kafka_security
+from src.common.utils import apply_kafka_security
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.common.watermark_strategy import WatermarkStrategy
 from pyflink.common.time import Duration, Time
@@ -23,9 +23,9 @@ from pyflink.common.typeinfo import Types
 from pyflink.datastream.window import SlidingEventTimeWindows, TumblingProcessingTimeWindows
 from pyflink.datastream.functions import AggregateFunction
 
-from common.models import OrderBookMetrics
-from config import settings
-from jobs.orderbook_alerts import parse_metrics
+from src.common.models import OrderBookMetrics
+from src.config import settings
+from src.jobs.orderbook_alerts import parse_metrics
 
 # ===== Aggregate Functions ===== #
 

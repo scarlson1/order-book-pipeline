@@ -1,6 +1,6 @@
 import asyncio
 import signal
-from config import settings
+from src.config import settings
 from loguru import logger
 from typing import Protocol, runtime_checkable
 
