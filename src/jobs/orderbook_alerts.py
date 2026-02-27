@@ -17,7 +17,6 @@ Documentation:
 
 import json
 from typing import Tuple
-from src.common.utils import apply_kafka_security
 from loguru import logger
 from pydantic import ValidationError
 from pyflink.datastream import StreamExecutionEnvironment
@@ -36,6 +35,7 @@ from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.time import Time
 from pyflink.common.typeinfo import Types
 
+from src.common.utils import apply_kafka_security
 from src.common.models import Alert, AlertType, OrderBookMetrics, Severity
 from src.config import settings
 

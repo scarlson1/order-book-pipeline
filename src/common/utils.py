@@ -1,8 +1,9 @@
 import asyncio
 import signal
-from src.config import settings
 from loguru import logger
 from typing import Protocol, runtime_checkable
+
+from src.config import settings
 
 # 1. Define the Protocol
 # @runtime_checkable allows you to use isinstance() checks at runtime, 
