@@ -199,24 +199,24 @@ class Settings(BaseSettings):
         logger.info(f"Redis: {self.redis_host}:{self.redis_port} (ssl={self.redis_ssl})")
         logger.info(f"Kafka: {self.redpanda_bootstrap_servers}")
         logger.info("-" * 60)
-        logger.info("DOWNSAMPLING CONFIGURATION")
-        logger.info("-" * 60)
-        logger.info(f"Downsampling Enabled: {self.downsampling_enabled}")
-        logger.info(f"Bucket Size: {self.downsample_bucket_seconds} seconds")
+        # logger.info("DOWNSAMPLING CONFIGURATION")
+        # logger.info("-" * 60)
+        # logger.info(f"Downsampling Enabled: {self.downsampling_enabled}")
+        # logger.info(f"Bucket Size: {self.downsample_bucket_seconds} seconds")
         # logger.info(f"Depth: {self.downsample_depth} levels")
         
-        if self.downsampling_enabled:
-            estimated_storage = (
-                len(self.symbols) * 500 * (86400 / self.downsample_bucket_seconds)
-            ) / (1024 * 1024)  # Convert to MB/day
-            logger.info(f"Estimated Storage: {estimated_storage:.2f} MB/day")
-            days_retention = 250 / estimated_storage if estimated_storage > 0 else float('inf')
-            logger.info(f"Storage Retention (250MB): {days_retention:.0f} days")
-        else:
-            logger.warning("⚠️  Downsampling DISABLED - Raw ticks mode (high storage!)")
-            # logger.warning("    For production, set DOWNSAMPLING_ENABLED=true")
+        # if self.downsampling_enabled:
+        #     estimated_storage = (
+        #         len(self.symbols) * 500 * (86400 / self.downsample_bucket_seconds)
+        #     ) / (1024 * 1024)  # Convert to MB/day
+        #     logger.info(f"Estimated Storage: {estimated_storage:.2f} MB/day")
+        #     days_retention = 250 / estimated_storage if estimated_storage > 0 else float('inf')
+        #     logger.info(f"Storage Retention (250MB): {days_retention:.0f} days")
+        # else:
+        #     logger.warning("⚠️  Downsampling DISABLED - Raw ticks mode (high storage!)")
+        #     # logger.warning("    For production, set DOWNSAMPLING_ENABLED=true")
         
-        logger.info("-" * 60)
+        # logger.info("-" * 60)
         logger.info(f"Alert Thresholds: HIGH={self.alert_threshold_high}, MEDIUM={self.alert_threshold_medium}")
         logger.info("=" * 60)
 
