@@ -132,8 +132,8 @@ class IngestionService:
             stats = self.producer.get_stats()
             logger.info(
                 f"Stats: sent={stats['messages_sent']} "
-                f"failed={stats['messages_failed']} "
-                f"symbols={settings.symbol_list}"
+                f"failed = {stats['messages_failed']} "
+                f"symbols = {settings.symbol_list}"
             )
     
     async def start(self) -> None:
