@@ -185,6 +185,30 @@ mkdir -p logs
 docker compose -f compose.oci.yml --env-file .env.oci up -d --build
 ```
 
+> Issue: docker-compose-plugin doesn't appear to be installed (even though it's listed as a package in `cloud-init.yaml`)
+> Debug logs: "The following packages were not found by APT so APT will not attempt to install them: ['docker-compose-plugin']"
+
+[Stackoverflow solution](https://stackoverflow.com/questions/76031884/sudo-apt-get-install-docker-compose-plugin-fails-on-jammy)
+
+```bash
+# Add Docker's official GPG key:
+sudo apt-get update
+sudo apt-get install ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+# Add the repository to Apt sources:
+echo \
+  "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+# Remember to start the docker container after installation by running
+$: sudo service docker start
+```
+
 5. Verify:
 
 ```bash

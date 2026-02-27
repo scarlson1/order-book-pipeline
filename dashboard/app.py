@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Add project root to sys.path for Streamlit Cloud compatibility
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import streamlit as st
 
 from dashboard.components.alert_feed import render_alert_feed

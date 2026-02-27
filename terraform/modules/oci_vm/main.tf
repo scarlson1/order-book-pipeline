@@ -50,6 +50,16 @@ resource "oci_core_security_list" "public" {
     }
   }
 
+  # Flink REST API (port 8081) - for Streamlit Cloud health checks
+  ingress_security_rules {
+    protocol = "6"
+    source   = "0.0.0.0/0"
+    tcp_options {
+      min = 8081
+      max = 8081
+    }
+  }
+
   egress_security_rules {
     protocol    = "all"
     destination = "0.0.0.0/0"
