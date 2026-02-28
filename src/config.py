@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_password: str | None = None
     redis_ssl: bool = False
+    redis_username: str = "default"
     redis_db: int = 0
     redis_url_env: str | None = Field(
         default=None,
@@ -131,6 +132,9 @@ class Settings(BaseSettings):
         Returns:
             Redis connection string
         """
+        if self.redis_url_env:
+            return self.redis_url_env.strip()
+
         scheme = 'rediss' if self.redis_ssl else 'redis'
 
         if self.redis_password:

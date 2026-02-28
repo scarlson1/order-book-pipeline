@@ -40,7 +40,6 @@ class RedisClient:
         self._closed = False
 
     async def connect(self):
-        # self.client = redis.from_url(settings.redis_url())
         if self.client is not None:
             logger.warning("Redis client already connected")
             return
@@ -48,8 +47,7 @@ class RedisClient:
         logger.info(f"Connecting to Redis at {settings.redis_host}:{settings.redis_port}")
 
         try:
-            # Use URL-based config so `rediss://` enables TLS without
-            # passing backend-specific SSL kwargs.
+            # Option A (active): direct client from URL.
             self.client = redis.from_url(
                 settings.redis_url,
                 decode_responses=True,
@@ -58,6 +56,18 @@ class RedisClient:
                 socket_connect_timeout=5,
                 retry_on_timeout=True,
             )
+
+            # Option B (fallback): explicit pool + Redis client.
+            # Kept here for quick switching if you prefer pool wiring.
+            # pool = redis.ConnectionPool.from_url(
+            #     settings.redis_url,
+            #     decode_responses=True,
+            #     max_connections=20,
+            #     socket_keepalive=True,
+            #     socket_connect_timeout=5,
+            #     retry_on_timeout=True,
+            # )
+            # self.client = redis.Redis(connection_pool=pool)
             
             # Test connection
             await self.client.ping()
