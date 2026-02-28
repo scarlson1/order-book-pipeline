@@ -164,6 +164,8 @@ Recommended OCI shape for this compose stack:
 
 1. SSH into VM:
 
+> May be easier/quicker to set up [Remote SSH in VS Code or Cursor](https://code.visualstudio.com/docs/remote/ssh)
+
 ```bash
 ssh ubuntu@<OCI_VM_PUBLIC_IP>
 ```
