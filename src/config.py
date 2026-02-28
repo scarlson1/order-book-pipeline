@@ -2,6 +2,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 from loguru import logger
+from urllib.parse import quote
 # from pydantic import SecretStr
 
 class Settings(BaseSettings):
@@ -24,6 +25,11 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_password: str | None = None
     redis_ssl: bool = False
+    redis_db: int = 0
+    redis_url_env: str | None = Field(
+        default=None,
+        validation_alias="REDIS_URL",
+    )
     
     # ===== Redpanda/Kafka Settings ===== #
     redpanda_enabled: bool = True
@@ -125,10 +131,14 @@ class Settings(BaseSettings):
         Returns:
             Redis connection string
         """
-        scheme = "rediss" if self.redis_ssl else "redis"
+        scheme = 'rediss' if self.redis_ssl else 'redis'
+
         if self.redis_password:
-            return f"{scheme}://:{self.redis_password}@{self.redis_host}:{self.redis_port}/0"
-        return f"{scheme}://{self.redis_host}:{self.redis_port}/0"
+            user = quote(self.redis_username, safe="")
+            pwd = quote(self.redis_password, safe="")
+            return f"{scheme}://{user}:{pwd}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+        return f"{scheme}://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     @property
     def redpanda_bootstrap_servers(self) -> str:

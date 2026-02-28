@@ -28,6 +28,7 @@ ENV/
 .env
 .env.local
 .env.oci
+.streamlit/secrets.toml
 
 # Terraform runtime artifacts
 **/.terraform/
