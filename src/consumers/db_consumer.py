@@ -1,4 +1,4 @@
-"""Database consumer - writes metrics and alerts from Redpanda to TimescaleDB."""
+"""Database consumer - writes metrics and alerts from Redpanda to Postgres/CockroachDB."""
 
 import asyncio
 import datetime
@@ -13,7 +13,7 @@ from src.config import settings
 # alerts idempotent ??
 
 class DatabaseConsumer:
-    """Consumes metrics, alerts, and windowed data from Redpanda and writes to TimescaleDB.
+    """Consumes metrics, alerts, and windowed data from Redpanda and writes to Postgres/CockroachDB.
     
     Features:
     - Batch inserts for high-volume metrics (every 100 msgs OR 1 second)
@@ -24,9 +24,9 @@ class DatabaseConsumer:
     - Error handling for bad messages
     
     Message Flow:
-        Redpanda (orderbook.metrics) ──────┬─→ Batch → TimescaleDB → Commit
-        Redpanda (orderbook.alerts) ───────┼─→ Immediate → TimescaleDB → Commit
-        Redpanda (orderbook.metrics.windowed) ─┴─→ Batch → TimescaleDB → Commit
+        Redpanda (orderbook.metrics) ──────┬─→ Batch → CockroachDB → Commit
+        Redpanda (orderbook.alerts) ───────┼─→ Immediate → CockroachDB → Commit
+        Redpanda (orderbook.metrics.windowed) ─┴─→ Batch → CockroachDB → Commit
     
     Expected Load:
     - 3 symbols × 600 messages/min = 1,800 metrics/min

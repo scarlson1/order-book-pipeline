@@ -107,7 +107,7 @@ streamlit run dashboard/app.py
 ### Code Quality Tools
 
 ```bash
-# Format code (Black + Ruff)
+# Format code (YAPF + Ruff)
 make format
 just format
 
@@ -298,16 +298,40 @@ psql -h localhost -U orderbook_user -d orderbook
 
 ### Schema Migrations
 
-For schema changes, edit `init-db.sql` and either:
+Use `db/migrations/` as the schema source of truth.
+`init-db.sql` is legacy bootstrap and should not be used for ongoing schema changes.
+
+Create and apply migrations with [dbmate](https://github.com/amacneil/dbmate):
 
 ```bash
-# Option 1: Recreate database (loses data)
-docker-compose down -v
-docker-compose up -d
+# Install dbmate if not already installed (macOS example)
+brew install dbmate
 
-# Option 2: Apply changes manually
-docker-compose exec timescaledb psql -U orderbook_user -d orderbook < new_migration.sql
+# From repo root
+cd /order-book-pipeline
+
+# Example DATABASE_URL (Cockroach)
+export DATABASE_URL='postgresql://<user>:<password>@<host>:26257/<db>?sslmode=require'
+
+# Create a new migration
+dbmate --migrations-dir db/migrations new add_example_change
+
+# Apply pending migrations
+dbmate --migrations-dir db/migrations up
+
+# Show migration state
+dbmate --migrations-dir db/migrations status
+
+# If needed, rollback one step
+dbmate --migrations-dir db/migrations down
 ```
+
+Retention policies are managed via migrations:
+
+- `orderbook_metrics` TTL: 7 days (raw metrics)
+- `orderbook_metrics_windowed` TTL: 30 days (windowed aggregates)
+
+When changing retention, add a new migration instead of editing existing migration files.
 
 ### Query Performance
 
@@ -420,7 +444,7 @@ jobs:
       - name: Run linting
         run: |
           ruff check .
-          black --check .
+          yapf --diff -r src dashboard tests
 ```
 
 ## Tips & Best Practices
@@ -431,11 +455,11 @@ jobs:
 2. **Enable pre-commit hooks** - Catch issues before committing
 3. **Write tests first** - TDD helps design better APIs
 4. **Use type hints** - mypy will catch bugs early
-5. **Format on save** - Configure your IDE to run black/ruff automatically
+5. **Format on save** - Configure your IDE to run yapf/ruff automatically
 
 ### Code Style
 
-- Follow PEP 8 (enforced by black and ruff)
+- Follow PEP 8 (enforced by yapf and ruff)
 - Use type hints everywhere
 - Write docstrings for public functions
 - Keep functions small (<50 lines)

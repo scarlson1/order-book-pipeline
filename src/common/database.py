@@ -3,10 +3,12 @@
 # timescale DB: https://github.com/timescale/timescaledb
 # asyncpg: https://magicstack.github.io/asyncpg/current/usage.html
 
-import asyncpg
-from typing import List, Dict, Optional
+import asyncio
+from typing import Dict, Iterator, List, Optional
 from datetime import datetime
+import asyncpg
 from loguru import logger
+
 from src.config import settings
 
 class DatabaseClient:
@@ -23,21 +25,23 @@ class DatabaseClient:
 
     def __init__(self):
         self.pool: Optional[asyncpg.Pool] = None
+        self.bulk_write_chunk_size = 1000
+        self.max_write_retries = 5
+        self.retry_base_delay_seconds = 0.2
 
     async def connect(self):
         """Create connection pool.
         
         Reference: https://magicstack.github.io/asyncpg/current/api/index.html#asyncpg.create_pool
         """
-        logger.info(f"Connecting to database at {settings.postgres_host}:{settings.postgres_port}")
+        logger.info(
+            f'Connecting to database at {settings.postgres_host}:{settings.postgres_port} '
+            f'(sslmode={settings.postgres_effective_sslmode})'
+        )
         
         try:
             self.pool = await asyncpg.create_pool(
-                host=settings.postgres_host,
-                port=settings.postgres_port,
-                user=settings.postgres_user, 
-                password=settings.postgres_password,
-                database=settings.postgres_db,
+                dsn=settings.database_url,
                 min_size=5,
                 max_size=20,
                 max_inactive_connection_lifetime=300, # 5 mins
@@ -48,13 +52,6 @@ class DatabaseClient:
             async with self.pool.acquire() as conn:
                 version = await conn.fetchval('SELECT version()')
                 logger.info(f"Connected to database: {version}")
-                
-                # Check TimescaleDB extension
-                has_timescale = await conn.fetchval(
-                    "SELECT COUNT(*) FROM pg_extension WHERE extname = 'timescaledb'"
-                )
-                if has_timescale:
-                    logger.info("✓ TimescaleDB extension detected")
         
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
@@ -66,6 +63,127 @@ class DatabaseClient:
             await self.pool.close()
             logger.info('Database connection pool closed')
             self.pool = None
+
+    @staticmethod
+    def _chunk_records(records: list[tuple], chunk_size: int) -> Iterator[list[tuple]]:
+        """Yield fixed-size chunks from a list of records."""
+        for i in range(0, len(records), chunk_size):
+            yield records[i:i + chunk_size]
+
+    @staticmethod
+    def _is_retryable_transaction_error(error: asyncpg.PostgresError) -> bool:
+        """Cockroach retry loop should handle serialization failures."""
+        return getattr(error, 'sqlstate', None) == '40001'
+
+    @staticmethod
+    def _should_fallback_from_copy(error: asyncpg.PostgresError) -> bool:
+        """Fallback to batched INSERT when COPY is restricted or unsupported."""
+        sqlstate = getattr(error, 'sqlstate', None)
+        if sqlstate in {'42501', '0A000'}:
+            return True
+
+        message = str(error).lower()
+        return 'copy' in message and (
+            'not supported' in message
+            or 'requires admin' in message
+            or 'permission denied' in message
+        )
+
+    async def _write_chunk_with_executemany(
+        self,
+        table_name: str,
+        columns: list[str],
+        records_chunk: list[tuple],
+    ) -> None:
+        """Write a chunk with batched INSERT and retry on retryable Cockroach errors."""
+        if not self.pool:
+            raise RuntimeError('Database connection pool is not initialized')
+
+        placeholders = ', '.join(
+            f'${index}' for index in range(1, len(columns) + 1)
+        )
+        columns_sql = ', '.join(columns)
+        insert_sql = (
+            f'INSERT INTO {table_name} ({columns_sql}) VALUES ({placeholders})'
+        )
+
+        for attempt in range(1, self.max_write_retries + 1):
+            try:
+                async with self.pool.acquire() as conn:
+                    await conn.executemany(insert_sql, records_chunk)
+                return
+            except asyncpg.PostgresError as error:
+                if (self._is_retryable_transaction_error(error)
+                        and attempt < self.max_write_retries):
+                    delay = self.retry_base_delay_seconds * (2**(attempt - 1))
+                    logger.warning(
+                        f'Retryable transaction error with INSERT fallback for '
+                        f'{table_name} (attempt={attempt}/{self.max_write_retries}, '
+                        f'delay={delay:.2f}s): {error}'
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise
+
+    async def _write_chunk_with_copy(
+        self,
+        table_name: str,
+        columns: list[str],
+        records_chunk: list[tuple],
+    ) -> None:
+        """Write a chunk using COPY with fallback and retry behavior for Cockroach."""
+        if not self.pool:
+            raise RuntimeError('Database connection pool is not initialized')
+
+        for attempt in range(1, self.max_write_retries + 1):
+            try:
+                async with self.pool.acquire() as conn:
+                    await conn.copy_records_to_table(
+                        table_name,
+                        records=records_chunk,
+                        columns=columns
+                    )
+                return
+            except asyncpg.PostgresError as error:
+                if self._should_fallback_from_copy(error):
+                    logger.warning(
+                        f'COPY fallback for {table_name}; using INSERT executemany '
+                        f'(sqlstate={getattr(error, "sqlstate", "unknown")}): {error}'
+                    )
+                    await self._write_chunk_with_executemany(
+                        table_name=table_name,
+                        columns=columns,
+                        records_chunk=records_chunk
+                    )
+                    return
+
+                if (self._is_retryable_transaction_error(error)
+                        and attempt < self.max_write_retries):
+                    delay = self.retry_base_delay_seconds * (2**(attempt - 1))
+                    logger.warning(
+                        f'Retryable transaction error while writing {table_name} '
+                        f'(attempt={attempt}/{self.max_write_retries}, '
+                        f'delay={delay:.2f}s): {error}'
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise
+
+    async def _bulk_insert_records(
+        self,
+        table_name: str,
+        columns: list[str],
+        records: list[tuple],
+    ) -> None:
+        """Insert records in chunks with COPY and Cockroach-aware fallback/retry."""
+        for records_chunk in self._chunk_records(
+                records=records,
+                chunk_size=self.bulk_write_chunk_size):
+            await self._write_chunk_with_copy(
+                table_name=table_name,
+                columns=columns,
+                records_chunk=records_chunk
+            )
 
     async def insert_metrics(self, metrics: Dict) -> None:
         """Insert order book metrics.
@@ -157,12 +275,11 @@ class DatabaseClient:
             'imbalance_velocity', 'depth_levels', 'update_id'
         ]
         
-        async with self.pool.acquire() as conn:
-            await conn.copy_records_to_table(
-                'orderbook_metrics',
-                records=records,
-                columns=columns
-            )
+        await self._bulk_insert_records(
+            table_name='orderbook_metrics',
+            columns=columns,
+            records=records
+        )
         
         logger.debug(f"Inserted batch of {len(metrics)} metrics")
 
@@ -238,12 +355,11 @@ class DatabaseClient:
             'sample_count', 'window_velocity'
         ]
         
-        async with self.pool.acquire() as conn:
-            await conn.copy_records_to_table(
-                'orderbook_metrics_windowed',
-                records=records,
-                columns=columns
-            )
+        await self._bulk_insert_records(
+            table_name='orderbook_metrics_windowed',
+            columns=columns,
+            records=records
+        )
         
         logger.debug(f"Inserted batch of {len(windowed_list)} windowed metrics")
 
@@ -426,6 +542,9 @@ class DatabaseClient:
             return dict(row) if row else None
 
     async def health_check(self) -> bool:
+        if not self.pool:
+            return False
+
         try:
             async with self.pool.acquire() as conn:
                 await conn.fetchval('SELECT 1')

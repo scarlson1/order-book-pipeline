@@ -1,4 +1,7 @@
-.PHONY: help up down restart logs build clean db-shell redis-shell test uv-install uv-sync flink-ui flink-logs
+.PHONY: help up down restart logs build clean db-shell db-size db-migrate db-migrate-up db-migrate-down db-migrate-status db-migrate-new redis-shell test uv-install uv-sync flink-ui flink-logs
+
+DBMATE ?= dbmate
+MIGRATIONS_DIR ?= db/migrations
 
 # Default target
 help:
@@ -13,7 +16,12 @@ help:
 	@echo "  make clean           - Remove all containers and volumes"
 	@echo ""
 	@echo "Database commands:"
-	@echo "  make db-shell        - Connect to PostgreSQL"
+	@echo "  make db-shell        - Connect using DATABASE_URL"
+	@echo "  make db-migrate      - Apply DB migrations (alias for db-migrate-up)"
+	@echo "  make db-migrate-up   - Apply DB migrations (dbmate)"
+	@echo "  make db-migrate-down - Roll back one migration (dbmate)"
+	@echo "  make db-migrate-status - Show migration status (dbmate)"
+	@echo "  make db-migrate-new name=add_x - Create migration file"
 	@echo "  make redis-shell     - Connect to Redis"
 	@echo "  make db-size         - Check database size"
 	@echo "  make table-sizes     - Check table sizes"
@@ -41,45 +49,45 @@ help:
 	@echo "  make uv-install      - Install uv package manager"
 	@echo "  make uv-sync         - Sync dependencies with uv"
 	@echo "  make test            - Run tests locally"
-	@echo "  make format          - Format code with black and ruff"
+	@echo "  make format          - Format code with yapf and ruff"
 
 # Start services
 up:
-	docker-compose up -d
+	docker compose up -d
 	@echo "Services starting... Dashboard will be available at http://localhost:8501"
 
 # Start with Redpanda + Flink (core streaming stack)
 up-streaming:
-	docker-compose up -d
+	docker compose up -d
 	@echo "Streaming stack starting..."
 	@echo "  Redpanda Console: http://localhost:8080"
 	@echo "  Flink Web UI:     http://localhost:8081"
 
 # Start with Grafana
 up-grafana:
-	docker-compose --profile with-grafana up -d
+	docker compose --profile with-grafana up -d
 
 # Start with pgAdmin
 up-pgadmin:
-	docker-compose --profile with-pgadmin up -d
+	docker compose --profile with-pgadmin up -d
 
 # Submit Flink jobs
 up-grafana:
-	docker-compose --profile auto-submit up -d
+	docker compose --profile auto-submit up -d
 
 # Start everything
 up-all:
-	docker-compose --profile with-grafana --profile with-pgadmin --profile auto-submit up -d
+	docker compose --profile with-grafana --profile with-pgadmin --profile auto-submit up -d
 
 # Flink commands
 flink-ui:
 	open http://localhost:8081
 
 flink-logs:
-	docker-compose logs -f flink-jobmanager flink-taskmanager
+	docker compose logs -f flink-jobmanager flink-taskmanager
 
 flink-jobs:
-	docker-compose exec flink-jobmanager flink list
+	docker compose exec flink-jobmanager flink list
 
 flink-submit:
 	docker compose --profile auto-submit up -d --force-recreate flink-job-submitter
@@ -95,61 +103,80 @@ flink-windows:
 
 # Stop services
 down:
-	docker-compose down
+	docker compose down
 
 # Restart services
 restart:
-	docker-compose restart
+	docker compose restart
 
 # View logs
 logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 # View specific service logs
 logs-ingestion:
-	docker-compose logs -f ingestion
+	docker compose logs -f ingestion
 
 logs-dashboard:
-	docker-compose logs -f dashboard
+	docker compose logs -f dashboard
 
-logs-db:
-	docker-compose logs -f timescaledb
+# TODO: add logs-db once docker-compose is set up
+# logs-db:
+# 	docker compose logs -f consumers
 
 # Build services
 build:
-	docker-compose build
+	docker compose build
 
 # Rebuild and start
 rebuild: build up
 
 # Clean everything (including volumes)
 clean:
-	docker-compose down -v
+	docker compose down -v
 	@echo "All containers and volumes removed"
 
 # Database shell
 db-shell:
-	docker-compose exec timescaledb psql -U orderbook_user -d orderbook
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+	psql "$$DATABASE_URL"
 
 # Redis shell
 redis-shell:
-	docker-compose exec redis redis-cli
+	docker compose exec redis redis-cli
 
 # Check status
 status:
-	docker-compose ps
+	docker compose ps
 
-# Run database migrations (when you add them)
-db-migrate:
-	docker-compose exec timescaledb psql -U orderbook_user -d orderbook -f /docker-entrypoint-initdb.d/init-db.sql
+# Run database migrations
+db-migrate: db-migrate-up
+
+db-migrate-up:
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+	$(DBMATE) --migrations-dir $(MIGRATIONS_DIR) up
+
+db-migrate-down:
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+	$(DBMATE) --migrations-dir $(MIGRATIONS_DIR) down
+
+db-migrate-status:
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+	$(DBMATE) --migrations-dir $(MIGRATIONS_DIR) status
+
+db-migrate-new:
+	@test -n "$(name)" || (echo "usage: make db-migrate-new name=add_xyz"; exit 1)
+	$(DBMATE) --migrations-dir $(MIGRATIONS_DIR) new $(name)
 
 # Check database size
 db-size:
-	docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "SELECT pg_size_pretty(pg_database_size('orderbook'));"
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+	psql "$$DATABASE_URL" -c "SELECT pg_size_pretty(pg_database_size(current_database()));"
 
 # Check table sizes
 table-sizes:
-	docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "\
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+	psql "$$DATABASE_URL" -c "\
 		SELECT schemaname, tablename, pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size \
 		FROM pg_tables \
 		WHERE schemaname = 'public' \
@@ -157,23 +184,26 @@ table-sizes:
 
 # View recent metrics
 recent-metrics:
-	docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "SELECT * FROM orderbook_metrics ORDER BY time DESC LIMIT 10;"
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+	psql "$$DATABASE_URL" -c "SELECT * FROM orderbook_metrics ORDER BY time DESC LIMIT 10;"
 
 # View recent alerts
 recent-alerts:
-	docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "SELECT * FROM orderbook_alerts ORDER BY time DESC LIMIT 10;"
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+	psql "$$DATABASE_URL" -c "SELECT * FROM orderbook_alerts ORDER BY time DESC LIMIT 10;"
 
 # View dashboard summary
 dashboard-summary:
-	docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "SELECT * FROM dashboard_summary;"
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+	psql "$$DATABASE_URL" -c "SELECT * FROM latest_windowed_metrics ORDER BY time DESC LIMIT 20;"
 
 # Check Redis keys
 redis-keys:
-	docker-compose exec redis redis-cli KEYS "*"
+	docker compose exec redis redis-cli KEYS "*"
 
 # Get latest cached data for BTC
 redis-btc:
-	docker-compose exec redis redis-cli GET "orderbook:BTCUSDT:latest"
+	docker compose exec redis redis-cli GET "orderbook:BTCUSDT:latest"
 
 # Setup development environment
 dev-setup:
@@ -184,7 +214,7 @@ dev-setup:
 
 # Run tests (when implemented)
 test:
-	docker-compose exec ingestion pytest tests/
+	docker compose exec ingestion pytest tests/
 
 # Monitor resource usage
 stats:
@@ -192,13 +222,15 @@ stats:
 
 # Backup database
 backup:
-	docker-compose exec timescaledb pg_dump -U orderbook_user orderbook > backup_$(shell date +%Y%m%d_%H%M%S).sql
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+	pg_dump "$$DATABASE_URL" > backup_$(shell date +%Y%m%d_%H%M%S).sql
 	@echo "Database backed up to backup_*.sql"
 
 # Restore database from backup
 # Usage: make restore BACKUP=backup_20240101_120000.sql
 restore:
-	docker-compose exec -T timescaledb psql -U orderbook_user orderbook < $(BACKUP)
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+	psql "$$DATABASE_URL" < $(BACKUP)
 
 # Local development with uv
 uv-install:
@@ -214,7 +246,7 @@ uv-sync:
 
 # Format code
 format:
-	black src/ dashboard/ tests/
+	yapf -r -i src/ dashboard/ tests/
 	ruff check --fix src/ dashboard/ tests/
 
 # Lint code

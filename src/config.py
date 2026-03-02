@@ -1,8 +1,9 @@
+from typing import List
+from urllib.parse import quote, urlencode
+
+from loguru import logger
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
-from loguru import logger
-from urllib.parse import quote
 # from pydantic import SecretStr
 
 class Settings(BaseSettings):
@@ -19,6 +20,22 @@ class Settings(BaseSettings):
     postgres_db: str
     postgres_user: str
     postgres_password: str
+    postgres_sslmode: str | None = Field(
+        default=None,
+        validation_alias='POSTGRES_SSLMODE',
+    )
+    postgres_sslrootcert: str | None = Field(
+        default=None,
+        validation_alias='POSTGRES_SSLROOTCERT',
+    )
+    postgres_sslcert: str | None = Field(
+        default=None,
+        validation_alias='POSTGRES_SSLCERT',
+    )
+    postgres_sslkey: str | None = Field(
+        default=None,
+        validation_alias='POSTGRES_SSLKEY',
+    )
 
     # ===== Redis Settings ===== #
     redis_host: str
@@ -108,9 +125,13 @@ class Settings(BaseSettings):
         Returns:
             PostgreSQL connection string
         """
+        user = quote(self.postgres_user, safe='')
+        password = quote(self.postgres_password, safe='')
+        database = quote(self.postgres_db, safe='')
+        query_string = urlencode(self.postgres_ssl_query_params)
         return (
-            f"postgresql://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f'postgresql://{user}:{password}@{self.postgres_host}:{self.postgres_port}/'
+            f'{database}?{query_string}'
         )
 
     @property
@@ -120,10 +141,35 @@ class Settings(BaseSettings):
         Returns:
             Async PostgreSQL connection string for asyncpg
         """
+        user = quote(self.postgres_user, safe='')
+        password = quote(self.postgres_password, safe='')
+        database = quote(self.postgres_db, safe='')
+        query_string = urlencode(self.postgres_ssl_query_params)
         return (
-            f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
-            f'@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}'
+            f'postgresql+asyncpg://{user}:{password}@{self.postgres_host}:'
+            f'{self.postgres_port}/{database}?{query_string}'
         )
+
+    @property
+    def postgres_effective_sslmode(self) -> str:
+        """Resolve sslmode with environment-aware defaults."""
+        if self.postgres_sslmode:
+            return self.postgres_sslmode
+        return 'require' if self.is_production() else 'disable'
+
+    @property
+    def postgres_ssl_query_params(self) -> dict[str, str]:
+        """Build PostgreSQL SSL query parameters for DSN URLs."""
+        params: dict[str, str] = {'sslmode': self.postgres_effective_sslmode}
+        optional_params = {
+            'sslrootcert': self.postgres_sslrootcert,
+            'sslcert': self.postgres_sslcert,
+            'sslkey': self.postgres_sslkey,
+        }
+        for key, value in optional_params.items():
+            if value:
+                params[key] = value
+        return params
 
     @property
     def redis_url(self) -> str:
@@ -210,6 +256,7 @@ class Settings(BaseSettings):
         logger.info(f"Symbols: {self.symbol_list}")
         logger.info(f"Binance URL: {self.binance_ws_url}")
         logger.info(f"Database: {self.postgres_host}:{self.postgres_port}/{self.postgres_db}")
+        logger.info(f"Database SSL mode: {self.postgres_effective_sslmode}")
         logger.info(f"Redis: {self.redis_host}:{self.redis_port} (ssl={self.redis_ssl})")
         logger.info(f"Kafka: {self.redpanda_bootstrap_servers}")
         logger.info("-" * 60)
@@ -262,6 +309,31 @@ class Settings(BaseSettings):
                 "Example: SYMBOLS=BTCUSDT,ETHUSDT"
             )
         return v.strip().upper()
+
+    @field_validator('postgres_sslmode')
+    @classmethod
+    def validate_postgres_sslmode(cls, v: str | None) -> str | None:
+        """Validate PostgreSQL sslmode when explicitly provided."""
+        if v is None:
+            return None
+
+        normalized = v.strip().lower()
+        if not normalized:
+            return None
+
+        valid_modes = {
+            'disable',
+            'allow',
+            'prefer',
+            'require',
+            'verify-ca',
+            'verify-full',
+        }
+        if normalized not in valid_modes:
+            raise ValueError(
+                f'POSTGRES_SSLMODE must be one of {valid_modes}, got {v}'
+            )
+        return normalized
 
     @field_validator('depth_levels')
     @classmethod

@@ -121,7 +121,7 @@ uv-sync:
 
 # Code quality
 format:
-    black src/ dashboard/ tests/
+    yapf -r -i src/ dashboard/ tests/
     ruff check --fix src/ dashboard/ tests/
 
 lint:

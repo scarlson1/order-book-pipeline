@@ -45,6 +45,11 @@ def to_json_record(record) -> str:
 
 class WindowAggFunction(AggregateFunction):
     """Aggregate metrics into payload compatible with DB windowed schema."""
+    # TODO(cockroach-cutover): Add 1m materialized-view parity fields here so
+    # we can remove DB-side aggregate views:
+    # - mid_price OHLC: open_price, high_price, low_price, close_price
+    # - weighted_imbalance stddev: stddev_imbalance
+    # - volume extremes needed by dashboard parity: max_volume (and min_volume if needed)
 
     def __init__(self, window_type: str, window_duration_seconds: int):
         self.window_type = window_type
@@ -53,6 +58,8 @@ class WindowAggFunction(AggregateFunction):
     def create_accumulator(self) -> dict:
         return {
             'symbol': '',
+            # TODO(cockroach-cutover): track mid_price first/last/min/max per
+            # window so open/high/low/close can be emitted from Flink.
             'imb_total': 0.0,
             'imb_min': None,
             'imb_max': None,
@@ -101,6 +108,9 @@ class WindowAggFunction(AggregateFunction):
         window_end = datetime.now(timezone.utc)
         window_start = window_end - timedelta(seconds=self.window_duration_seconds)
 
+        # TODO(cockroach-cutover): include OHLC + stddev fields in this output
+        # once they are computed in the accumulator and update DB schema
+        # (orderbook_metrics_windowed) and consumers accordingly.
         return {
             'symbol': acc['symbol'],
             'window_type': self.window_type,
