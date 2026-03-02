@@ -107,9 +107,9 @@ Alternative (valid) option:
   - [x] Keep health checks and pool stats intact.
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/src/consumers/db_consumer.py`
-  - [ ] Update Timescale-specific docstrings/comments.
-  - [ ] Confirm batching sizes and commit behavior for Cockroach throughput.
-  - [ ] Optionally add idempotent insert patterns where at-least-once delivery can duplicate writes.
+  - [x] Update Timescale-specific docstrings/comments.
+  - [x] Confirm batching sizes and commit behavior for Cockroach throughput.
+  - [x] Optionally add idempotent insert patterns where at-least-once delivery can duplicate writes (best-effort in-memory dedupe in active batches).
 
 ## Dashboard Query Layer
 
