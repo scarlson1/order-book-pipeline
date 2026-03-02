@@ -155,30 +155,30 @@ Alternative (valid) option:
   - [x]Gate deployment on successful migration.
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/.github/workflows/test.yml`
-  - [ ] Replace Timescale service image assumptions.
-  - [ ] Ensure tests run against Cockroach-compatible schema setup.
-  - [ ] Add migration application during CI setup.
+  - [x] Replace Timescale service image assumptions.
+  - [x] Ensure tests run against Cockroach-compatible schema setup.
+  - [x] Add migration application during CI setup.
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/.github/workflows/infra-apply.yml`
-  - [ ] Keep infra provisioning.
-  - [ ] Optionally add outputs/secret sync hooks if Cockroach endpoint/user material is managed there.
+  - [x] Keep infra provisioning.
+  - [x] Optionally add outputs/secret sync hooks if Cockroach endpoint/user material is managed there.
 
 ## Terraform Integration
 
-- [ ] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/modules/cockroach/main.tf`
-- [ ] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/modules/cockroach/outputs.tf`
-- [ ] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/envs/prod/main.tf`
-- [ ] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/envs/prod/outputs.tf`
-  - [ ] Keep Terraform responsible for infrastructure lifecycle.
-  - [ ] Expand outputs for DB connection metadata if provider supports it.
-  - [ ] Do not manage application table DDL in Terraform.
-  - [ ] Feed runtime endpoint/user secrets into deploy environment.
+- [x] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/modules/cockroach/main.tf`
+- [x] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/modules/cockroach/outputs.tf`
+- [x] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/envs/prod/main.tf`
+- [x] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/envs/prod/outputs.tf`
+  - [x] Keep Terraform responsible for infrastructure lifecycle.
+  - [x] Expand outputs for DB connection metadata if provider supports it.
+  - [x] Do not manage application table DDL in Terraform.
+  - [x] Feed runtime endpoint/user secrets into deploy environment.
 
 ## Tests
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/tests/integration/test_database.py`
-  - [ ] Update assumptions from Timescale bootstrapped schema to migration-managed schema.
-  - [ ] Add coverage for Cockroach transaction retry behavior if retry logic is added.
+  - [x] Update assumptions from Timescale bootstrapped schema to migration-managed schema.
+  - [x] Add coverage for Cockroach transaction retry behavior if retry logic is added.
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/tests/integration/test_ingestion_pipeline.py`
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/tests/e2e/test_full_pipeline.py`

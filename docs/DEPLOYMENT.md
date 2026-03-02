@@ -25,7 +25,7 @@ flowchart LR
 
 ## What Runs Where
 
-| Component                              | Location                   |
+| Component                              | Location/Provider          |
 | -------------------------------------- | -------------------------- |
 | Ingestion                              | OCI VM (`compose.oci.yml`) |
 | Consumers                              | OCI VM (`compose.oci.yml`) |
@@ -49,24 +49,6 @@ flowchart LR
    - `db/migrations/*`
    - `.github/workflows/infra-apply.yml`
    - `.github/workflows/deploy-oci.yml`
-
-> **Note:** if cockroachDB is unable to support timescaleDB, need to update code
-> **Changes needed:**
->
-> 1. Replace `time_bucket('1 hour', ts)` with `DATE_TRUNC('hour', ts)` (5-10 queries)
-> 2. Remove `CREATE HYPERTABLE` calls (1-2 lines)
-> 3. Remove compression settings (1-2 lines)
->    **Example:**
->
-> ```sql
-> -- OLD (TimescaleDB):
-> SELECT time_bucket('5 min', timestamp) as bucket, AVG(imbalance)
-> FROM metrics GROUP BY bucket
->
-> -- NEW (CockroachDB/PostgreSQL):
-> SELECT DATE_TRUNC('minute', timestamp) as bucket, AVG(imbalance)
-> FROM metrics GROUP BY DATE_TRUNC('minute', timestamp)
-> ```
 
 ## Step 1: Create Managed Services
 
@@ -97,6 +79,11 @@ flowchart LR
    - `cp .env.oci.example .env.oci`
 2. Fill `.env.oci` with real credentials.
 3. Keep `.env.oci` out of git.
+
+For CI/CD deploys, use GitHub Actions secrets instead of storing `.env.oci` in git:
+
+1. Add repository secrets for runtime config keys from `.env.oci.example`.
+2. `deploy-oci.yml` will render `/opt/order-book-pipeline/.env.oci` over SSH from those secrets on each deploy.
 
 ## Step 3: Apply Schema Migrations (Required)
 
@@ -278,7 +265,7 @@ curl http://localhost:8081/overview
 
 - Workflow: `.github/workflows/infra-apply.yml`
 - Trigger: `workflow_dispatch`
-- Purpose: Terraform `init/plan/apply`
+- Purpose: Terraform `init/plan/apply`, then export outputs and sync `oci_vm_public_ip` to GitHub Actions variable `OCI_VM_HOST`
 
 Required GitHub secrets:
 
@@ -301,13 +288,70 @@ Required GitHub secrets:
 
 - Workflow: `.github/workflows/deploy-oci.yml`
 - Trigger paths: `src/**`, `db/migrations/**`, `compose.oci.yml`, Dockerfiles, workflow file
-- Purpose: run DB migrations, then SSH into VM and run `docker compose up -d --build`
+- Purpose: render `.env.oci` from GitHub secrets, run DB migrations, then SSH into VM and run `docker compose up -d --build`
 
 Required GitHub secrets:
 
-- `OCI_VM_HOST`
 - `OCI_VM_USER`
 - `OCI_VM_SSH_KEY`
+
+Required GitHub variable:
+
+- `OCI_VM_HOST` (synced by `infra-apply.yml`; `deploy-oci.yml` still supports secret fallback)
+
+Required GitHub repository secrets for runtime `.env.oci` rendering:
+
+- Runtime keys from `.env.oci.example` (for example: `DATABASE_URL`, `POSTGRES_*`, `REDIS_*`, `REDPANDA_*`, `FLINK_*`, and app settings such as `SYMBOLS`, thresholds, and `LOG_*`).
+
+Exact keys consumed by `.github/workflows/deploy-oci.yml` and written into `.env.oci`:
+
+Auto-synced GitHub Actions variables from `infra-apply.yml`:
+
+- `OCI_VM_HOST`
+- `POSTGRES_PORT`
+- `POSTGRES_DB`
+- `POSTGRES_SSLMODE`
+- `REDIS_HOST`
+- `REDIS_PORT`
+- `REDIS_SSL`
+- `REDPANDA_USERNAME`
+- `REDPANDA_TOPIC_PREFIX`
+- `REDPANDA_SECURITY_PROTOCOL`
+- `REDPANDA_SASL_MECHANISM`
+- `REDPANDA_SSL_CHECK_HOSTNAME`
+- `REDPANDA_KAFKA_PORT`
+
+Required repository secrets (deploy fails if missing):
+
+- `DATABASE_URL`
+- `POSTGRES_HOST`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `REDPANDA_BOOTSTRAP_SERVERS`
+- `FLINK_HOST`
+- `FLINK_PARALLELISM`
+- `FLINK_PORT`
+- `BINANCE_WS_URL`
+- `SYMBOLS`
+- `DEPTH_LEVELS`
+- `UPDATE_SPEED`
+- `CALCULATE_DEPTH`
+- `ROLLING_WINDOW_SECONDS`
+- `CALCULATE_VELOCITY`
+- `ALERT_THRESHOLD_HIGH`
+- `ALERT_THRESHOLD_MEDIUM`
+- `SPREAD_ALERT_MULTIPLIER`
+- `VELOCITY_THRESHOLD`
+- `LOG_LEVEL`
+- `LOG_FILE`
+- `ENVIRONMENT`
+
+Optional repository secrets (allowed to be empty):
+
+- `REDIS_PASSWORD`
+- `REDIS_URL`
+- `REDPANDA_SERVICE`
+- `REDPANDA_PASSWORD`
 
 ## Rollback
 

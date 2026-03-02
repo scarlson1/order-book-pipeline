@@ -3,6 +3,10 @@ name: Infra Apply
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   apply:
     runs-on: ubuntu-latest
@@ -43,3 +47,58 @@ jobs:
 
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
+
+      - name: Export Terraform Outputs
+        run: terraform output -json > tf-output.json
+
+      - name: Upload Terraform Outputs Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-outputs-prod
+          path: terraform/envs/prod/tf-output.json
+
+      - name: Sync Runtime Variables from Terraform Outputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          set_variable() {
+            variable_name="$1"
+            variable_value="$2"
+
+            if [ -z "$variable_value" ]; then
+              echo "Skipping empty variable ${variable_name}"
+              return 0
+            fi
+
+            if gh api "/repos/${GITHUB_REPOSITORY}/actions/variables/${variable_name}" >/dev/null 2>&1; then
+              gh api \
+                --method PATCH \
+                "/repos/${GITHUB_REPOSITORY}/actions/variables/${variable_name}" \
+                -f name="${variable_name}" \
+                -f value="${variable_value}" >/dev/null
+              echo "Updated ${variable_name}"
+            else
+              gh api \
+                --method POST \
+                "/repos/${GITHUB_REPOSITORY}/actions/variables" \
+                -f name="${variable_name}" \
+                -f value="${variable_value}" >/dev/null
+              echo "Created ${variable_name}"
+            fi
+          }
+
+          set_variable "OCI_VM_HOST" "$(terraform output -raw oci_vm_public_ip)"
+          set_variable "POSTGRES_PORT" "$(terraform output -raw cockroach_sql_port)"
+          set_variable "POSTGRES_DB" "$(terraform output -raw cockroach_default_database)"
+          set_variable "POSTGRES_SSLMODE" "$(terraform output -raw cockroach_default_sslmode)"
+          set_variable "REDIS_HOST" "$(terraform output -raw upstash_redis_endpoint)"
+          set_variable "REDIS_PORT" "$(terraform output -raw upstash_redis_port)"
+          set_variable "REDIS_SSL" "$(terraform output -raw upstash_redis_tls)"
+          set_variable "REDPANDA_USERNAME" "$(terraform output -raw redpanda_kafka_username)"
+          set_variable "REDPANDA_TOPIC_PREFIX" "$(terraform output -raw redpanda_topic_prefix)"
+          set_variable "REDPANDA_SECURITY_PROTOCOL" "$(terraform output -raw redpanda_security_protocol)"
+          set_variable "REDPANDA_SASL_MECHANISM" "$(terraform output -raw redpanda_sasl_mechanism)"
+          set_variable "REDPANDA_SSL_CHECK_HOSTNAME" "$(terraform output -raw redpanda_ssl_check_hostname)"
+          set_variable "REDPANDA_KAFKA_PORT" "$(terraform output -raw redpanda_kafka_port)"

@@ -1,6 +1,5 @@
-"""PostgreSQL/TimescaleDB client."""
+"""PostgreSQL/CockroachDB client."""
 
-# timescale DB: https://github.com/timescale/timescaledb
 # asyncpg: https://magicstack.github.io/asyncpg/current/usage.html
 
 import asyncio
@@ -13,7 +12,7 @@ from src.config import settings
 
 
 class DatabaseClient:
-    """Async PostgreSQL/TimescaleDB client.
+    """Async PostgreSQL/CockroachDB client.
     
     Uses connection pooling for efficient database access.
     

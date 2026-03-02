@@ -238,7 +238,7 @@ class DatabaseQueries:
         '''
             Flink Window Output
             Use Case: Display rolling averages on charts
-            Strategy: Hybrid - Redis for latest window, TimescaleDB for history
+            Strategy: Hybrid - Redis for latest window, CockroachDB for history
         '''
         try:
             async with self.db.pool.acquire() as conn:

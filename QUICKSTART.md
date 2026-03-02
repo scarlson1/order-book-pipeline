@@ -14,7 +14,7 @@ docker-compose ps
 
 You should see:
 
-- ✅ timescaledb (healthy)
+- ✅ cockroachdb (healthy)
 - ✅ redis (healthy)
 - ✅ ingestion (running)
 - ✅ dashboard (running)
@@ -47,7 +47,7 @@ docker-compose down
 docker-compose restart ingestion
 
 # Connect to database
-docker-compose exec timescaledb psql -U orderbook_user -d orderbook
+docker-compose exec cockroachdb psql -U orderbook_user -d orderbook
 
 # Connect to Redis
 docker-compose exec redis redis-cli

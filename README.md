@@ -375,13 +375,13 @@ docker compose up -d --force-recreate flink-job-submitter
 
 ```bash
 # Connect to database
-docker-compose exec timescaledb psql -U orderbook_user -d orderbook
+docker-compose exec cockroachdb psql -U orderbook_user -d orderbook
 
 # Run SQL queries
-docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "SELECT * FROM dashboard_summary;"
+docker-compose exec cockroachdb psql -U orderbook_user -d orderbook -c "SELECT * FROM dashboard_summary;"
 
 # Check table size
-docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "SELECT pg_size_pretty(pg_total_relation_size('orderbook_metrics'));"
+docker-compose exec cockroachdb psql -U orderbook_user -d orderbook -c "SELECT pg_size_pretty(pg_total_relation_size('orderbook_metrics'));"
 ```
 
 ### Redis Management

@@ -7,6 +7,7 @@ terraform {
 }
 
 resource "cockroach_cluster" "this" {
+  # Infrastructure lifecycle only. Application schema is managed by dbmate migrations.
   name              = var.cluster_name
   cloud_provider    = var.cloud_provider
   plan              = "BASIC"

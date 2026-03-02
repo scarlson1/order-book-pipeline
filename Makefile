@@ -124,9 +124,8 @@ logs-ingestion:
 logs-dashboard:
 	docker compose logs -f dashboard
 
-# TODO: add logs-db once docker-compose is set up
-# logs-db:
-# 	docker compose logs -f consumers
+logs-db:
+	docker compose logs -f cockroachdb
 
 # Build services
 build:

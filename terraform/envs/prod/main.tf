@@ -19,7 +19,7 @@ module "cockroach" {
   cluster_name      = var.cockroach_cluster_name
   cloud_provider    = var.cockroach_cloud_provider
   region            = var.cockroach_region
-  delete_protection = false
+  delete_protection = var.cockroach_delete_protection
 }
 
 module "upstash" {

@@ -50,6 +50,10 @@ variable "cockroach_region" {
   type    = string
   default = "us-central1"
 }
+variable "cockroach_delete_protection" {
+  type    = bool
+  default = false
+}
 
 # Upstash
 variable "upstash_email" { type = string }

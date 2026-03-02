@@ -289,7 +289,7 @@ Create `.vscode/launch.json`:
 
 ```bash
 # Using Docker
-docker-compose exec timescaledb psql -U orderbook_user -d orderbook
+docker-compose exec cockroachdb psql -U orderbook_user -d orderbook
 
 # Using make/just
 make db-shell

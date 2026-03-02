@@ -13,7 +13,7 @@ Everything AFTER publishing is handled by Flink:
         ↓
     Redpanda (orderbook.metrics / orderbook.alerts)
         ↓
-    TimescaleDB + Redis + Dashboard
+    CockroachDB + Redis + Dashboard
 
 - DOWNSAMPLING_ENABLED=true (default):
   - Buffers ticks for N seconds (default 60s = 1 minute)

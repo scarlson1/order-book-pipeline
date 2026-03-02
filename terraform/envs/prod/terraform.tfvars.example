@@ -13,6 +13,7 @@ cockroach_api_key        = "..."
 cockroach_cluster_name   = "orderbook-crdb"
 cockroach_cloud_provider = "AWS"
 cockroach_region         = "us-east-1"
+cockroach_delete_protection = false
 
 upstash_email   = "you@example.com"
 upstash_api_key = "..."
