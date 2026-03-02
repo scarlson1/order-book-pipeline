@@ -38,10 +38,7 @@ class DatabaseQueries:
 
     # ===== Metrics Queries ===== #
 
-    async def fetch_latest_metrics(
-        self,
-        symbol: str
-    ) -> Optional[Dict]:
+    async def fetch_latest_metrics(self, symbol: str) -> Optional[Dict]:
         """Fetch the most recent metrics for a symbol."""
         try:
             results = await self.db.fetch_recent_metrics(symbol, limit=1)
@@ -49,9 +46,9 @@ class DatabaseQueries:
             # if results:
             #     logger.info(f"First result keys: {results[0].keys()}")
             #     logger.info(f"First result: {results[0]}")
-            
+
             return results[0] if results else None
-            
+
         except Exception as e:
             logger.error(f"Error fetching latest metrics for {symbol}: {e}")
             return None
@@ -64,7 +61,7 @@ class DatabaseQueries:
         """
         try:
             return await self.db.fetch_multiple_symbols_metrics()
-            
+
         except Exception as e:
             logger.error(f"Error fetching multiple symbols: {e}")
             return []
@@ -106,14 +103,11 @@ class DatabaseQueries:
 
     #         return metrics
 
-
-    async def fetch_time_series(
-        self,
-        symbol: str,
-        start_time: datetime.datetime,
-        end_time: datetime.datetime,
-        interval: str = '1m'
-    ) -> List[Dict]:
+    async def fetch_time_series(self,
+                                symbol: str,
+                                start_time: datetime.datetime,
+                                end_time: datetime.datetime,
+                                interval: str = '1m') -> List[Dict]:
         """Fetch time series data for charting.
         
         Args:
@@ -129,7 +123,8 @@ class DatabaseQueries:
             async with self.db.pool.acquire() as conn:
                 # For small intervals, return raw data
                 if interval in ('1m', '5m'):
-                    rows = await conn.fetch("""
+                    rows = await conn.fetch(
+                        """
                         SELECT
                             time,
                             symbol,
@@ -144,43 +139,65 @@ class DatabaseQueries:
                             AND time BETWEEN $2 AND $3
                         ORDER BY time ASC
                     """, symbol, start_time, end_time)
-                
-                # For large intervals, use time_bucket aggregation
-                # TimescaleDB Docs: https://www.tigerdata.com/docs/use-timescale/latest/time-buckets/use-time-buckets
+
+                # Cockroach-compatible bucketed aggregation for larger intervals.
                 else:
-                    bucket_interval = '1 hour' if interval == '1h' else '1 day'
-                    
-                    rows = await conn.fetch("""
+                    if interval == '1h':
+                        bucket_granularity = 'hour'
+                    elif interval == '1d':
+                        bucket_granularity = 'day'
+                    else:
+                        logger.warning(
+                            f'Unsupported interval {interval}; falling back to raw range query')
+                        rows = await conn.fetch(
+                            """
+                            SELECT
+                                time,
+                                symbol,
+                                mid_price,
+                                imbalance_ratio,
+                                spread_bps,
+                                bid_volume,
+                                ask_volume,
+                                total_volume
+                            FROM orderbook_metrics
+                            WHERE symbol = $1
+                                AND time BETWEEN $2 AND $3
+                            ORDER BY time ASC
+                        """, symbol, start_time, end_time)
+                        return [dict(row) for row in rows]
+
+                    rows = await conn.fetch(
+                        f"""
                         SELECT
-                            time_bucket($1, time) AS time,
+                            date_trunc('{bucket_granularity}', time) AS time,
                             symbol,
-                            AVG(mid_price) AS mid_price,
-                            AVG(imbalance_ratio) AS imbalance_ratio,
-                            AVG(spread_bps) AS spread_bps,
-                            SUM(bid_volume) AS bid_volume,
-                            SUM(ask_volume) AS ask_volume,
+                            AVG(avg_mid_price) AS mid_price,
+                            AVG(avg_imbalance) AS imbalance_ratio,
+                            AVG(avg_spread_bps) AS spread_bps,
+                            SUM(total_bid_volume) AS bid_volume,
+                            SUM(total_ask_volume) AS ask_volume,
                             SUM(total_volume) AS total_volume
-                        FROM orderbook_metrics
-                        WHERE symbol = $2
-                            AND time BETWEEN $3 AND $4
-                        GROUP BY time, symbol
+                        FROM orderbook_metrics_windowed
+                        WHERE symbol = $1
+                            AND window_type = '1m_tumbling'
+                            AND time BETWEEN $2 AND $3
+                        GROUP BY 1, 2
                         ORDER BY time ASC
-                    """, bucket_interval, symbol, start_time, end_time)
-                
+                    """, symbol, start_time, end_time)
+
                 return [dict(row) for row in rows]
-                
+
         except Exception as e:
             logger.error(f"Error fetching time series for {symbol}: {e}")
             return []
 
     # ===== Alert Queries ===== #
 
-    async def fetch_alerts(
-        self,
-        symbol: Optional[str] = None,
-        limit: int = 50,
-        since: Optional[datetime.datetime] = None
-    ) -> List[Dict]:
+    async def fetch_alerts(self,
+                           symbol: Optional[str] = None,
+                           limit: int = 50,
+                           since: Optional[datetime.datetime] = None) -> List[Dict]:
         '''Fetch alerts fromm the database'''
         try:
             query = '''
@@ -193,7 +210,7 @@ class DatabaseQueries:
             if symbol:
                 query += ' AND symbol = $1'
                 params.append(symbol)
-            
+
             if since:
                 param_num = len(params) + 1
                 query += f' AND time >= ${param_num}'
@@ -213,10 +230,10 @@ class DatabaseQueries:
     # ===== Windowed Metrics Queries ===== #
 
     async def fetch_windowed_aggregates(
-        self,
-        symbol: str,
-        window_type: str = '5m_sliding',
-        limit: int = 60  # Last hour of 5-min windows (rolling every 1m)
+            self,
+            symbol: str,
+            window_type: str = '5m_sliding',
+            limit: int = 60  # Last hour of 5-min windows (rolling every 1m)
     ):
         '''
             Flink Window Output
@@ -225,7 +242,8 @@ class DatabaseQueries:
         '''
         try:
             async with self.db.pool.acquire() as conn:
-                rows = await conn.fetch("""
+                rows = await conn.fetch(
+                    """
                     SELECT
                         *
                     FROM orderbook_metrics_windowed
@@ -235,18 +253,15 @@ class DatabaseQueries:
                     LIMIT $3
                 """, symbol, window_type, limit)
 
-
-                
                 return [dict(row) for row in rows]
-        
+
         except Exception as e:
             logger.error(f"Error fetching windowed aggregates: {e}")
             return []
 
         # # Get latest window from Redis
         # latest = await self.redis.get_windowed(symbol, window_type, limit)
-        
-        
+
         # # Get historical windows from database
         # async with self.db.pool.acquire() as conn:
         #     historical = await conn.execute("""
@@ -257,41 +272,43 @@ class DatabaseQueries:
         #         ORDER BY window_end DESC
         #         LIMIT $3
         #     """, symbol, window_type, limit)
-        
+
         # # Combine (latest might duplicate most recent historical)
         # results = []
         # if latest:
         #     results.append(json.loads(latest))
-        
+
         # # Deduplicate by window_end timestamp
         # seen_timestamps = {r['window_end'] for r in results}
         # for h in historical:
         #     if h['window_end'] not in seen_timestamps:
         #         results.append(h)
-        
+
         # return results[:limit]
 
-    async def fetch_latest_windowed(
-        self,
-        symbol: str,
-        window_type: str = '5m_sliding'
-    ) -> Optional[Dict]:
+    async def fetch_latest_windowed(self,
+                                    symbol: str,
+                                    window_type: str = '5m_sliding') -> Optional[Dict]:
         """Fetch the most recent windowed aggregate."""
         try:
             return await self.db.fetch_latest_windowed_metrics(symbol, window_type)
-            
+
         except Exception as e:
             logger.error(f"Error fetching latest windowed: {e}")
             return None
 
-    async def get_volatility_data(self, symbol: str, timezone_pref: str = 'America/New_York', days: int = 7):
+    async def get_volatility_data(self,
+                                  symbol: str,
+                                  timezone_pref: str = 'America/New_York',
+                                  days: int = 7):
         # exclude holidays ??
         # use more than 7 days ??
         try:
             timezone = get_valid_timezone(timezone_pref)
 
             async with self.db.pool.acquire() as conn:
-                rows = await conn.fetch(f"""
+                rows = await conn.fetch(
+                    f"""
                     SELECT 
                         EXTRACT(DOW FROM window_end AT TIME ZONE $2) as day_of_week,
                         EXTRACT(HOUR FROM window_end AT TIME ZONE $2) as hour,
@@ -306,24 +323,20 @@ class DatabaseQueries:
 
                 # self.redis.insert_volatility_data(symbol, timezone, rows)
 
-                
                 return [dict(row) for row in rows]
-        
+
         except Exception as e:
             logger.error(f"Error fetching windowed aggregates: {e}")
             return []
 
     # ===== Percentage Change Queries ===== #
 
-    async def fetch_price_at_time(
-        self,
-        symbol: str,
-        timestamp: datetime.datetime
-    ) -> Optional[Dict]:
+    async def fetch_price_at_time(self, symbol: str,
+                                  timestamp: datetime.datetime) -> Optional[Dict]:
         """Fetch price closest to a specific timestamp."""
         try:
             return await self.db.fetch_price_at_time(symbol, timestamp)
-            
+
         except Exception as e:
             logger.error(f"Error fetching price at time: {e}")
             return None
@@ -342,19 +355,19 @@ class DatabaseQueries:
             current = await self.fetch_latest_metrics(symbol)
             if not current:
                 return None
-            
+
             # Get price 24h ago
             day_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
             previous = await self.fetch_price_at_time(symbol, day_ago)
-            
+
             if not previous:
                 return None
-            
+
             current_price = float(current['mid_price'])
             previous_price = float(previous['mid_price'])
-            
+
             change_pct = ((current_price - previous_price) / previous_price) * 100
-            
+
             return {
                 'current_price': current_price,
                 'previous_price': previous_price,
@@ -362,16 +375,14 @@ class DatabaseQueries:
                 'change_direction': 'up' if change_pct >= 0 else 'down',
                 'comparison_period': '24h'
             }
-            
+
         except Exception as e:
             logger.error(f"Error computing price change: {e}")
             return None
 
-    async def compute_metric_vs_windowed(
-        self,
-        symbol: str,
-        window_type: str = '5m_sliding'
-    ) -> Optional[Dict]:
+    async def compute_metric_vs_windowed(self,
+                                         symbol: str,
+                                         window_type: str = '5m_sliding') -> Optional[Dict]:
         """Compare current metrics vs windowed average.
         
         Args:
@@ -386,18 +397,18 @@ class DatabaseQueries:
             current = await self.fetch_latest_metrics(symbol)
             if not current:
                 return None
-            
+
             # Get windowed average
             windowed = await self.fetch_latest_windowed(symbol, window_type)
             if not windowed:
                 return None
-            
+
             # Calculate deviations
             def calc_deviation(current_val, avg_val):
                 if avg_val == 0:
                     return 0.0
                 return round(((current_val - avg_val) / abs(avg_val)) * 100, 2)
-            
+
             return {
                 'current': {
                     'imbalance': current['imbalance_ratio'],
@@ -410,37 +421,27 @@ class DatabaseQueries:
                     'volume': windowed['avg_total_volume']
                 },
                 'deviation_pct': {
-                    'imbalance': calc_deviation(
-                        current['imbalance_ratio'],
-                        windowed['avg_imbalance']
-                    ),
-                    'spread': calc_deviation(
-                        current['spread_bps'],
-                        windowed['avg_spread_bps']
-                    ),
-                    'volume': calc_deviation(
-                        current.get('total_volume', 0),
-                        windowed['avg_total_volume']
-                    )
+                    'imbalance':
+                    calc_deviation(current['imbalance_ratio'], windowed['avg_imbalance']),
+                    'spread':
+                    calc_deviation(current['spread_bps'], windowed['avg_spread_bps']),
+                    'volume':
+                    calc_deviation(current.get('total_volume', 0), windowed['avg_total_volume'])
                 },
                 'comparison_period': window_type
             }
-            
+
         except Exception as e:
             logger.error(f"Error computing metric deviations: {e}")
             return None
 
     # ===== Statistics Queries ===== #
 
-    async def fetch_summary_statistics(
-        self,
-        symbol: str,
-        hours: int = 1
-    ) -> Optional[Dict]:
+    async def fetch_summary_statistics(self, symbol: str, hours: int = 1) -> Optional[Dict]:
         """Fetch summary statistics for a symbol."""
         try:
             return await self.db.get_statistics(symbol, hours)
-            
+
         except Exception as e:
             logger.error(f"Error fetching summary statistics: {e}")
             return None
@@ -455,7 +456,7 @@ class DatabaseQueries:
         """
         try:
             return await self.db.health_check()
-            
+
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
             return False
@@ -468,7 +469,7 @@ class DatabaseQueries:
         """
         try:
             return await self.db.get_pool_stats()
-            
+
         except Exception as e:
             logger.error(f"Error fetching connection stats: {e}")
             return {"status": "error", "error": str(e)}

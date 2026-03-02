@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'db/migrations/**'
       - 'compose.oci.yml'
       - '.env.oci.example'
       - 'Dockerfile.ingestion'
@@ -27,5 +28,6 @@ jobs:
             git fetch --all
             git checkout main
             git pull --ff-only
+            docker compose -f compose.oci.yml --env-file .env.oci run --rm db-migrate
             docker compose -f compose.oci.yml --env-file .env.oci up -d --build ingestion consumers flink-jobmanager flink-taskmanager flink-job-submitter
             docker image prune -f

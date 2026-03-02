@@ -11,6 +11,7 @@ from loguru import logger
 
 from src.config import settings
 
+
 class DatabaseClient:
     """Async PostgreSQL/TimescaleDB client.
     
@@ -34,25 +35,22 @@ class DatabaseClient:
         
         Reference: https://magicstack.github.io/asyncpg/current/api/index.html#asyncpg.create_pool
         """
-        logger.info(
-            f'Connecting to database at {settings.postgres_host}:{settings.postgres_port} '
-            f'(sslmode={settings.postgres_effective_sslmode})'
-        )
-        
+        logger.info(f'Connecting to database at {settings.postgres_host}:{settings.postgres_port} '
+                    f'(sslmode={settings.postgres_effective_sslmode})')
+
         try:
             self.pool = await asyncpg.create_pool(
                 dsn=settings.database_url,
                 min_size=5,
                 max_size=20,
-                max_inactive_connection_lifetime=300, # 5 mins
-                command_timeout=60
-            )
+                max_inactive_connection_lifetime=300,  # 5 mins
+                command_timeout=60)
 
             # Test connection
             async with self.pool.acquire() as conn:
                 version = await conn.fetchval('SELECT version()')
                 logger.info(f"Connected to database: {version}")
-        
+
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             raise
@@ -83,11 +81,8 @@ class DatabaseClient:
             return True
 
         message = str(error).lower()
-        return 'copy' in message and (
-            'not supported' in message
-            or 'requires admin' in message
-            or 'permission denied' in message
-        )
+        return 'copy' in message and ('not supported' in message or 'requires admin' in message
+                                      or 'permission denied' in message)
 
     async def _write_chunk_with_executemany(
         self,
@@ -99,13 +94,9 @@ class DatabaseClient:
         if not self.pool:
             raise RuntimeError('Database connection pool is not initialized')
 
-        placeholders = ', '.join(
-            f'${index}' for index in range(1, len(columns) + 1)
-        )
+        placeholders = ', '.join(f'${index}' for index in range(1, len(columns) + 1))
         columns_sql = ', '.join(columns)
-        insert_sql = (
-            f'INSERT INTO {table_name} ({columns_sql}) VALUES ({placeholders})'
-        )
+        insert_sql = (f'INSERT INTO {table_name} ({columns_sql}) VALUES ({placeholders})')
 
         for attempt in range(1, self.max_write_retries + 1):
             try:
@@ -116,11 +107,9 @@ class DatabaseClient:
                 if (self._is_retryable_transaction_error(error)
                         and attempt < self.max_write_retries):
                     delay = self.retry_base_delay_seconds * (2**(attempt - 1))
-                    logger.warning(
-                        f'Retryable transaction error with INSERT fallback for '
-                        f'{table_name} (attempt={attempt}/{self.max_write_retries}, '
-                        f'delay={delay:.2f}s): {error}'
-                    )
+                    logger.warning(f'Retryable transaction error with INSERT fallback for '
+                                   f'{table_name} (attempt={attempt}/{self.max_write_retries}, '
+                                   f'delay={delay:.2f}s): {error}')
                     await asyncio.sleep(delay)
                     continue
                 raise
@@ -138,33 +127,25 @@ class DatabaseClient:
         for attempt in range(1, self.max_write_retries + 1):
             try:
                 async with self.pool.acquire() as conn:
-                    await conn.copy_records_to_table(
-                        table_name,
-                        records=records_chunk,
-                        columns=columns
-                    )
+                    await conn.copy_records_to_table(table_name,
+                                                     records=records_chunk,
+                                                     columns=columns)
                 return
             except asyncpg.PostgresError as error:
                 if self._should_fallback_from_copy(error):
-                    logger.warning(
-                        f'COPY fallback for {table_name}; using INSERT executemany '
-                        f'(sqlstate={getattr(error, "sqlstate", "unknown")}): {error}'
-                    )
-                    await self._write_chunk_with_executemany(
-                        table_name=table_name,
-                        columns=columns,
-                        records_chunk=records_chunk
-                    )
+                    logger.warning(f'COPY fallback for {table_name}; using INSERT executemany '
+                                   f'(sqlstate={getattr(error, "sqlstate", "unknown")}): {error}')
+                    await self._write_chunk_with_executemany(table_name=table_name,
+                                                             columns=columns,
+                                                             records_chunk=records_chunk)
                     return
 
                 if (self._is_retryable_transaction_error(error)
                         and attempt < self.max_write_retries):
                     delay = self.retry_base_delay_seconds * (2**(attempt - 1))
-                    logger.warning(
-                        f'Retryable transaction error while writing {table_name} '
-                        f'(attempt={attempt}/{self.max_write_retries}, '
-                        f'delay={delay:.2f}s): {error}'
-                    )
+                    logger.warning(f'Retryable transaction error while writing {table_name} '
+                                   f'(attempt={attempt}/{self.max_write_retries}, '
+                                   f'delay={delay:.2f}s): {error}')
                     await asyncio.sleep(delay)
                     continue
                 raise
@@ -176,14 +157,11 @@ class DatabaseClient:
         records: list[tuple],
     ) -> None:
         """Insert records in chunks with COPY and Cockroach-aware fallback/retry."""
-        for records_chunk in self._chunk_records(
-                records=records,
-                chunk_size=self.bulk_write_chunk_size):
-            await self._write_chunk_with_copy(
-                table_name=table_name,
-                columns=columns,
-                records_chunk=records_chunk
-            )
+        for records_chunk in self._chunk_records(records=records,
+                                                 chunk_size=self.bulk_write_chunk_size):
+            await self._write_chunk_with_copy(table_name=table_name,
+                                              columns=columns,
+                                              records_chunk=records_chunk)
 
     async def insert_metrics(self, metrics: Dict) -> None:
         """Insert order book metrics.
@@ -194,7 +172,8 @@ class DatabaseClient:
         Reference: https://magicstack.github.io/asyncpg/current/usage.html#inserting-data
         """
         async with self.pool.acquire() as conn:
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO orderbook_metrics (
                     time, symbol, mid_price, best_bid, best_ask,
                     imbalance_ratio, weighted_imbalance,
@@ -206,26 +185,13 @@ class DatabaseClient:
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                     $11, $12, $13, $14, $15, $16, $17, $18
                 )
-            """,
-                metrics['timestamp'],
-                metrics['symbol'],
-                metrics['mid_price'],
-                metrics['best_bid'],
-                metrics['best_ask'],
-                metrics['imbalance_ratio'],
-                metrics.get('weighted_imbalance'),
-                metrics['bid_volume'],
-                metrics['ask_volume'],
-                metrics.get('total_volume'),
-                metrics['spread_bps'],
-                metrics.get('spread_abs'),
-                metrics.get('vtob_ratio'),
-                metrics.get('best_bid_volume'),
-                metrics.get('best_ask_volume'),
-                metrics.get('imbalance_velocity'),
-                metrics.get('depth_levels'),
-                metrics.get('update_id')
-            )
+            """, metrics['timestamp'], metrics['symbol'], metrics['mid_price'],
+                metrics['best_bid'], metrics['best_ask'], metrics['imbalance_ratio'],
+                metrics.get('weighted_imbalance'), metrics['bid_volume'], metrics['ask_volume'],
+                metrics.get('total_volume'), metrics['spread_bps'], metrics.get('spread_abs'),
+                metrics.get('vtob_ratio'), metrics.get('best_bid_volume'),
+                metrics.get('best_ask_volume'), metrics.get('imbalance_velocity'),
+                metrics.get('depth_levels'), metrics.get('update_id'))
 
     async def insert_batch_metrics(self, metrics: list[dict]) -> None:
         """Insert batch of order book metrics efficiently.
@@ -240,47 +206,26 @@ class DatabaseClient:
         """
         if not metrics:
             return
-        
+
         # Prepare records as tuples matching column order exactly
-        records = [
-            (
-                m['timestamp'],
-                m['symbol'],
-                m['mid_price'],
-                m['best_bid'],
-                m['best_ask'],
-                m['imbalance_ratio'],
-                m.get('weighted_imbalance'),
-                m['bid_volume'],
-                m['ask_volume'],
-                m.get('total_volume'),
-                m['spread_bps'],
-                m.get('spread_abs'),
-                m.get('vtob_ratio'),
-                m.get('best_bid_volume'),
-                m.get('best_ask_volume'),
-                m.get('imbalance_velocity'),
-                m.get('depth_levels'),
-                m.get('update_id')
-            )
-            for m in metrics
-        ]
-        
+        records = [(m['timestamp'], m['symbol'], m['mid_price'], m['best_bid'], m['best_ask'],
+                    m['imbalance_ratio'], m.get('weighted_imbalance'), m['bid_volume'],
+                    m['ask_volume'], m.get('total_volume'), m['spread_bps'], m.get('spread_abs'),
+                    m.get('vtob_ratio'), m.get('best_bid_volume'), m.get('best_ask_volume'),
+                    m.get('imbalance_velocity'), m.get('depth_levels'), m.get('update_id'))
+                   for m in metrics]
+
         columns = [
-            'time', 'symbol', 'mid_price', 'best_bid', 'best_ask',
-            'imbalance_ratio', 'weighted_imbalance',
-            'bid_volume', 'ask_volume', 'total_volume',
-            'spread_bps', 'spread_abs',
-            'vtob_ratio', 'best_bid_volume', 'best_ask_volume',
-            'imbalance_velocity', 'depth_levels', 'update_id'
+            'time', 'symbol', 'mid_price', 'best_bid', 'best_ask', 'imbalance_ratio',
+            'weighted_imbalance', 'bid_volume', 'ask_volume', 'total_volume', 'spread_bps',
+            'spread_abs', 'vtob_ratio', 'best_bid_volume', 'best_ask_volume', 'imbalance_velocity',
+            'depth_levels', 'update_id'
         ]
-        
-        await self._bulk_insert_records(
-            table_name='orderbook_metrics',
-            columns=columns,
-            records=records
-        )
-        
+
+        await self._bulk_insert_records(table_name='orderbook_metrics',
+                                        columns=columns,
+                                        records=records)
+
         logger.debug(f"Inserted batch of {len(metrics)} metrics")
 
     async def insert_alert(self, alert: Dict) -> None:
@@ -290,24 +235,16 @@ class DatabaseClient:
             alert: Dictionary with alert data
         """
         async with self.pool.acquire() as conn:
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO orderbook_alerts (
                     time, symbol, alert_type, severity, message,
                     metric_value, threshold_value, side,
                     mid_price, imbalance_ratio
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            """,
-                alert['timestamp'],
-                alert['symbol'],
-                alert['alert_type'],
-                alert['severity'],
-                alert['message'],
-                alert['metric_value'],
-                alert.get('threshold_value'),
-                alert.get('side'),
-                alert.get('mid_price'),
-                alert.get('imbalance_ratio')
-            )
+            """, alert['timestamp'], alert['symbol'], alert['alert_type'], alert['severity'],
+                alert['message'], alert['metric_value'], alert.get('threshold_value'),
+                alert.get('side'), alert.get('mid_price'), alert.get('imbalance_ratio'))
 
     # ====== WINDOWED METRICS METHODS ====== #
 
@@ -319,7 +256,7 @@ class DatabaseClient:
         """
         if not windowed_list:
             return
-        
+
         records = [
             (
                 w['window_end'],  # time column
@@ -328,6 +265,7 @@ class DatabaseClient:
                 w['window_start'],
                 w['window_end'],
                 w['window_duration_seconds'],
+                w.get('avg_mid_price'),
                 w.get('avg_imbalance'),
                 w.get('min_imbalance'),
                 w.get('max_imbalance'),
@@ -341,34 +279,26 @@ class DatabaseClient:
                 w.get('total_ask_volume'),
                 w.get('total_volume'),
                 w['sample_count'],
-                w.get('window_velocity')
-            )
-            for w in windowed_list
+                w.get('window_velocity')) for w in windowed_list
         ]
-        
+
         columns = [
-            'time', 'symbol', 'window_type', 'window_start', 'window_end', 'window_duration_seconds',
-            'avg_imbalance', 'min_imbalance', 'max_imbalance',
-            'avg_spread_bps', 'min_spread_bps', 'max_spread_bps',
-            'avg_bid_volume', 'avg_ask_volume', 'avg_total_volume',
-            'total_bid_volume', 'total_ask_volume', 'total_volume',
-            'sample_count', 'window_velocity'
+            'time', 'symbol', 'window_type', 'window_start', 'window_end',
+            'window_duration_seconds', 'avg_mid_price', 'avg_imbalance', 'min_imbalance',
+            'max_imbalance', 'avg_spread_bps', 'min_spread_bps', 'max_spread_bps', 'avg_bid_volume',
+            'avg_ask_volume', 'avg_total_volume', 'total_bid_volume', 'total_ask_volume',
+            'total_volume', 'sample_count', 'window_velocity'
         ]
-        
-        await self._bulk_insert_records(
-            table_name='orderbook_metrics_windowed',
-            columns=columns,
-            records=records
-        )
-        
+
+        await self._bulk_insert_records(table_name='orderbook_metrics_windowed',
+                                        columns=columns,
+                                        records=records)
+
         logger.debug(f"Inserted batch of {len(windowed_list)} windowed metrics")
 
-
-    async def fetch_latest_windowed_metrics(
-        self,
-        symbol: str,
-        window_type: str = '5m_sliding'
-    ) -> Optional[Dict]:
+    async def fetch_latest_windowed_metrics(self,
+                                            symbol: str,
+                                            window_type: str = '5m_sliding') -> Optional[Dict]:
         """Fetch the most recent windowed metrics for a symbol.
         
         Args:
@@ -379,8 +309,10 @@ class DatabaseClient:
             Dictionary with windowed metrics or None
         """
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("""
+            row = await conn.fetchrow(
+                """
                 SELECT time, symbol, window_type, window_start, window_end,
+                       avg_mid_price,
                        avg_imbalance, avg_spread_bps, avg_total_volume,
                        sample_count, window_velocity
                 FROM orderbook_metrics_windowed
@@ -388,7 +320,7 @@ class DatabaseClient:
                 ORDER BY time DESC
                 LIMIT 1
             """, symbol, window_type)
-            
+
             return dict(row) if row else None
 
     # ===== STATS METHODS ===== #
@@ -406,7 +338,8 @@ class DatabaseClient:
         Reference: https://magicstack.github.io/asyncpg/current/usage.html#querying-data
         """
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch("""
+            rows = await conn.fetch(
+                """
                 SELECT time, symbol, mid_price, imbalance_ratio,
                        weighted_imbalance, spread_bps, bid_volume, ask_volume
                 FROM orderbook_metrics
@@ -430,12 +363,8 @@ class DatabaseClient:
             """)
             return [dict(row) for row in rows]
 
-    async def fetch_time_series(
-        self,
-        symbol: str,
-        start_time: datetime,
-        end_time: datetime
-    ) -> List[Dict]:
+    async def fetch_time_series(self, symbol: str, start_time: datetime,
+                                end_time: datetime) -> List[Dict]:
         """Fetch time series data for a symbol.
         
         Args:
@@ -447,21 +376,18 @@ class DatabaseClient:
             List of metric dictionaries
         """
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch("""
+            rows = await conn.fetch(
+                """
                 SELECT time, symbol, mid_price, imbalance_ratio,
                        weighted_imbalance, spread_bps
                 FROM orderbook_metrics
                 WHERE symbol = $1 AND time BETWEEN $2 AND $3
                 ORDER BY time ASC
             """, symbol, start_time, end_time)
-            
+
             return [dict(row) for row in rows]
 
-    async def fetch_alerts(
-        self,
-        symbol: Optional[str] = None,
-        limit: int = 100
-    ) -> List[Dict]:
+    async def fetch_alerts(self, symbol: Optional[str] = None, limit: int = 100) -> List[Dict]:
         """Fetch recent alerts.
         
         Args:
@@ -473,7 +399,8 @@ class DatabaseClient:
         """
         async with self.pool.acquire() as conn:
             if symbol:
-                rows = await conn.fetch("""
+                rows = await conn.fetch(
+                    """
                     SELECT time, symbol, alert_type, severity, message,
                            metric_value, threshold_value
                     FROM orderbook_alerts
@@ -482,14 +409,15 @@ class DatabaseClient:
                     LIMIT $2
                 """, symbol, limit)
             else:
-                rows = await conn.fetch("""
+                rows = await conn.fetch(
+                    """
                     SELECT time, symbol, alert_type, severity, message,
                            metric_value, threshold_value
                     FROM orderbook_alerts
                     ORDER BY time DESC
                     LIMIT $1
                 """, limit)
-            
+
             return [dict(row) for row in rows]
 
     async def get_statistics(self, symbol: str, hours: int = 1) -> Dict:
@@ -503,7 +431,8 @@ class DatabaseClient:
             Dictionary with statistics
         """
         async with self.pool.acquire() as conn:
-            stats = await conn.fetchrow("""
+            stats = await conn.fetchrow(
+                """
                 SELECT
                     AVG(weighted_imbalance) as avg_imbalance,
                     STDDEV(weighted_imbalance) as stddev_imbalance,
@@ -531,14 +460,15 @@ class DatabaseClient:
             Dictionary with price data or None
         """
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("""
+            row = await conn.fetchrow(
+                """
                 SELECT time, mid_price, best_bid, best_ask
                 FROM orderbook_metrics
                 WHERE symbol = $1 AND time >= $2
                 ORDER BY time ASC
                 LIMIT 1
             """, symbol, timestamp)
-            
+
             return dict(row) if row else None
 
     async def health_check(self) -> bool:
@@ -561,7 +491,7 @@ class DatabaseClient:
         """
         if not self.pool:
             return {"status": "not_connected"}
-        
+
         return {
             "size": self.pool.get_size(),
             "free": self.pool.get_idle_size(),

@@ -71,13 +71,16 @@ make pre-commit
 You still need Docker for the database, Redis, etc:
 
 ```bash
-# Start core services (TimescaleDB, Redis)
-docker-compose up -d timescaledb redis
+# Start core services (CockroachDB, Redis)
+docker-compose up -d cockroachdb redis
 
 # Or use make/just
 make up
 just up
 ```
+
+Local CockroachDB Admin UI: `http://localhost:8088`  
+Redpanda Console remains on `http://localhost:8080`.
 
 ### 5. Configure Environment
 
@@ -300,6 +303,10 @@ psql -h localhost -U orderbook_user -d orderbook
 
 Use `db/migrations/` as the schema source of truth.
 `init-db.sql` is legacy bootstrap and should not be used for ongoing schema changes.
+
+For local Docker Compose, migrations are applied automatically by the one-shot
+`db-migrate` service before DB-dependent app services start.
+You still use `dbmate` manually when creating or testing migration changes.
 
 Create and apply migrations with [dbmate](https://github.com/amacneil/dbmate):
 

@@ -39,7 +39,8 @@ flowchart LR
 
 1. Accounts: OCI, CockroachDB, Upstash, Redpanda Cloud, GitHub, Streamlit Cloud.
 2. Local tools: `terraform`, `git`, `ssh`.
-   - `dbmate` (for schema migrations)
+   - `docker compose` (for runtime + migration hook)
+   - Optional: `dbmate` CLI (for local/manual migration status checks)
 3. Repo files already present:
    - `terraform/envs/prod/*`
    - `terraform/modules/*`
@@ -102,20 +103,26 @@ flowchart LR
 `db/migrations/` is the source of truth for database schema, indexes, views, and retention settings.
 Do not use `init-db.sql` for production CockroachDB initialization.
 
-1. Set database URL (from your Cockroach SQL user/cluster):
+1. Set `DATABASE_URL` in `.env.oci` (from your Cockroach SQL user/cluster):
+
+```bash
+DATABASE_URL='postgresql://<user>:<password>@<host>:26257/<db>?sslmode=require'
+```
+
+2. Run migration hook with the OCI compose file:
+
+```bash
+docker compose -f compose.oci.yml --env-file .env.oci run --rm db-migrate
+```
+
+3. Optional status check (if local `dbmate` CLI is installed):
 
 ```bash
 export DATABASE_URL='postgresql://<user>:<password>@<host>:26257/<db>?sslmode=require'
-```
-
-2. Apply migrations:
-
-```bash
-dbmate --migrations-dir db/migrations up
 dbmate --migrations-dir db/migrations status
 ```
 
-3. Confirm retention policies were applied by migration:
+4. Confirm retention policies were applied by migration:
    - `orderbook_metrics` raw data retention: 7 days
    - `orderbook_metrics_windowed` retention: 30 days
 
@@ -209,8 +216,7 @@ mkdir -p logs
 
 ```bash
 cd /opt/order-book-pipeline
-export DATABASE_URL='postgresql://<user>:<password>@<host>:26257/<db>?sslmode=require'
-dbmate --migrations-dir db/migrations up
+docker compose -f compose.oci.yml --env-file .env.oci run --rm db-migrate
 ```
 
 5. Start runtime stack:
@@ -218,6 +224,8 @@ dbmate --migrations-dir db/migrations up
 ```bash
 docker compose -f compose.oci.yml --env-file .env.oci up -d --build
 ```
+
+`compose.oci.yml` also gates `consumers` on successful completion of `db-migrate` as a safety check.
 
 > Issue: docker-compose-plugin doesn't appear to be installed (even though it's listed as a package in `cloud-init.yaml`)
 > Debug logs: "The following packages were not found by APT so APT will not attempt to install them: ['docker-compose-plugin']"
@@ -292,7 +300,7 @@ Required GitHub secrets:
 ### App deploy workflow (on push to main)
 
 - Workflow: `.github/workflows/deploy-oci.yml`
-- Trigger paths: `src/**`, `compose.oci.yml`, Dockerfiles, workflow file
+- Trigger paths: `src/**`, `db/migrations/**`, `compose.oci.yml`, Dockerfiles, workflow file
 - Purpose: run DB migrations, then SSH into VM and run `docker compose up -d --build`
 
 Required GitHub secrets:

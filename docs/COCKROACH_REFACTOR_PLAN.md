@@ -114,71 +114,71 @@ Alternative (valid) option:
 ## Dashboard Query Layer
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/dashboard/data/db_queries.py`
-  - [ ] Replace `time_bucket` usage with Cockroach-compatible query patterns (`date_trunc` or pre-aggregated reads).
-  - [ ] Shift historical chart queries toward `orderbook_metrics_windowed`.
-  - [ ] Ensure query shapes align with Cockroach indexes.
+  - [x] Replace `time_bucket` usage with Cockroach-compatible query patterns (`date_trunc` or pre-aggregated reads).
+  - [x] Shift historical chart queries toward `orderbook_metrics_windowed`.
+  - [x] Ensure query shapes align with Cockroach indexes.
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/dashboard/data/data_layer.py`
-  - [ ] Update DB comments/terminology where needed.
-  - [ ] Keep health checks and fallback logic unchanged unless query API changes.
+  - [x] Update DB comments/terminology where needed.
+  - [x] Keep health checks and fallback logic unchanged unless query API changes.
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/dashboard/components/services_health_status.py`
-  - [ ] Optional label update (`PostgreSQL` to `CockroachDB`) for clarity.
+  - [x] Optional label update (`PostgreSQL` to `CockroachDB`) for clarity.
 
 ## Local Runtime and Compose
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/docker-compose.yml`
-  - Remove hard dependency on Timescale init script flow for schema.
-  - Decide local DB mode:
+  - [x] Remove hard dependency on Timescale init script flow for schema.
+  - [x] Decide local DB mode:
     - Option A: local Cockroach container (preferred for parity).
     - Option B: local Postgres for dev and Cockroach for prod only.
-  - Update service health checks and `depends_on` accordingly.
+  - [x] Update service health checks and `depends_on` accordingly.
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/compose.oci.yml`
-  - Keep external Cockroach usage.
-  - Add migration execution hook/process before consumers run.
+  - [x] Keep external Cockroach usage.
+  - [x] Add migration execution hook/process before consumers run.
 
 ## Developer Tooling
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/Makefile`
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/justfile`
-  - Replace `timescaledb` shell commands with DB-agnostic or Cockroach-aware commands.
-  - Add migration commands:
-    - create migration
-    - apply migration
-    - migration status
+  - [x] Replace `timescaledb` shell commands with DB-agnostic or Cockroach-aware commands.
+  - [x] Add migration commands:
+    - [x] create migration
+    - [x] apply migration
+    - [x] migration status
 
 ## CI/CD and GitHub Workflows
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/.github/workflows/deploy-oci.yml`
-  - Add migration step before `docker compose up`.
-  - Gate deployment on successful migration.
+  - [x]Add migration step before `docker compose up`.
+  - [x]Gate deployment on successful migration.
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/.github/workflows/test.yml`
-  - Replace Timescale service image assumptions.
-  - Ensure tests run against Cockroach-compatible schema setup.
-  - Add migration application during CI setup.
+  - [ ] Replace Timescale service image assumptions.
+  - [ ] Ensure tests run against Cockroach-compatible schema setup.
+  - [ ] Add migration application during CI setup.
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/.github/workflows/infra-apply.yml`
-  - Keep infra provisioning.
-  - Optionally add outputs/secret sync hooks if Cockroach endpoint/user material is managed there.
+  - [ ] Keep infra provisioning.
+  - [ ] Optionally add outputs/secret sync hooks if Cockroach endpoint/user material is managed there.
 
 ## Terraform Integration
 
-- `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/modules/cockroach/main.tf`
-- `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/modules/cockroach/outputs.tf`
-- `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/envs/prod/main.tf`
-- `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/envs/prod/outputs.tf`
-  - Keep Terraform responsible for infrastructure lifecycle.
-  - Expand outputs for DB connection metadata if provider supports it.
-  - Do not manage application table DDL in Terraform.
-  - Feed runtime endpoint/user secrets into deploy environment.
+- [ ] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/modules/cockroach/main.tf`
+- [ ] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/modules/cockroach/outputs.tf`
+- [ ] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/envs/prod/main.tf`
+- [ ] `/Users/spencercarlson/Documents/dev/order-book-pipeline/terraform/envs/prod/outputs.tf`
+  - [ ] Keep Terraform responsible for infrastructure lifecycle.
+  - [ ] Expand outputs for DB connection metadata if provider supports it.
+  - [ ] Do not manage application table DDL in Terraform.
+  - [ ] Feed runtime endpoint/user secrets into deploy environment.
 
 ## Tests
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/tests/integration/test_database.py`
-  - Update assumptions from Timescale bootstrapped schema to migration-managed schema.
-  - Add coverage for Cockroach transaction retry behavior if retry logic is added.
+  - [ ] Update assumptions from Timescale bootstrapped schema to migration-managed schema.
+  - [ ] Add coverage for Cockroach transaction retry behavior if retry logic is added.
 
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/tests/integration/test_ingestion_pipeline.py`
 - `/Users/spencercarlson/Documents/dev/order-book-pipeline/tests/e2e/test_full_pipeline.py`

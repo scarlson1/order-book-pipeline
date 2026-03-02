@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs build clean db-shell db-size db-migrate db-migrate-up db-migrate-down db-migrate-status db-migrate-new redis-shell test uv-install uv-sync flink-ui flink-logs
+.PHONY: help up down restart logs build clean up-submit db-shell db-size db-migrate db-migrate-up db-migrate-down db-migrate-status db-migrate-new migrate-apply migrate-status migrate-create redis-shell test uv-install uv-sync flink-ui flink-logs
 
 DBMATE ?= dbmate
 MIGRATIONS_DIR ?= db/migrations
@@ -22,6 +22,9 @@ help:
 	@echo "  make db-migrate-down - Roll back one migration (dbmate)"
 	@echo "  make db-migrate-status - Show migration status (dbmate)"
 	@echo "  make db-migrate-new name=add_x - Create migration file"
+	@echo "  make migrate-apply   - Alias for db-migrate-up"
+	@echo "  make migrate-status  - Alias for db-migrate-status"
+	@echo "  make migrate-create name=add_x - Alias for db-migrate-new"
 	@echo "  make redis-shell     - Connect to Redis"
 	@echo "  make db-size         - Check database size"
 	@echo "  make table-sizes     - Check table sizes"
@@ -43,6 +46,7 @@ help:
 	@echo "Profile commands:"
 	@echo "  make up-streaming    - Start with Redpanda + Flink"
 	@echo "  make up-grafana      - Start with Grafana"
+	@echo "  make up-submit       - Submit Flink jobs via auto-submit profile"
 	@echo "  make up-all          - Start all services"
 	@echo ""
 	@echo "Local development (uv):"
@@ -72,7 +76,7 @@ up-pgadmin:
 	docker compose --profile with-pgadmin up -d
 
 # Submit Flink jobs
-up-grafana:
+up-submit:
 	docker compose --profile auto-submit up -d
 
 # Start everything
@@ -166,6 +170,15 @@ db-migrate-status:
 
 db-migrate-new:
 	@test -n "$(name)" || (echo "usage: make db-migrate-new name=add_xyz"; exit 1)
+	$(DBMATE) --migrations-dir $(MIGRATIONS_DIR) new $(name)
+
+# Migration aliases for explicit create/apply/status naming
+migrate-apply: db-migrate-up
+
+migrate-status: db-migrate-status
+
+migrate-create:
+	@test -n "$(name)" || (echo "usage: make migrate-create name=add_xyz"; exit 1)
 	$(DBMATE) --migrations-dir $(MIGRATIONS_DIR) new $(name)
 
 # Check database size
