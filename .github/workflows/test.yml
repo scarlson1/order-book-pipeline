@@ -54,7 +54,7 @@ jobs:
             -p 26257:26257 \
             -p 8080:8080 \
             cockroachdb/cockroach:latest-v25.2 \
-            start-single-node --insecure --listen-addr=0.0.0.0:26257 --http-addr=0.0.0.0:8080 --advertise-addr=localhost
+            start-single-node --insecure --listen-addr=localhost:26257 --http-addr=0.0.0.0:8080 --advertise-addr=localhost
 
       - name: Wait for CockroachDB
         run: |
