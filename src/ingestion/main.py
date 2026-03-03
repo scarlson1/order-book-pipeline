@@ -33,11 +33,13 @@ Documentation:
 """
 
 import asyncio
+import inspect
 from datetime import datetime, timezone
 from src.common.utils import setup_signal_handlers
 from loguru import logger
 
 from src.common.redpanda_client import RedpandaProducer
+from src.common.models import OrderBookSnapshot
 from src.config import settings
 from src.ingestion.websocket_client import BinanceWebSocketClient
 from src.ingestion.orderbook_parser import OrderBookParser
@@ -56,7 +58,7 @@ class IngestionService:
         >>> service = IngestionService()
         >>> await service.start()
     """
-    
+
     def __init__(self):
         """Initialize ingestion service."""
         self.parser = OrderBookParser()
@@ -64,7 +66,7 @@ class IngestionService:
         self.ws_client: BinanceWebSocketClient | None = None
         self._running = False
         self._shutdown_event = asyncio.Event()
-    
+
     async def handle_orderbook(self, symbol: str, raw_data: dict) -> None:
         """Handle raw order book message from WebSocket.
         
@@ -88,54 +90,51 @@ class IngestionService:
         try:
             # Parse raw Binance data into standardized format
             snapshot = self.parser.parse(symbol, raw_data)
-            
+
             if snapshot is None:
-                logger.warning(f"Parser returned None for {symbol}")
+                logger.warning(f'Parser returned None for {symbol}')
                 return
-            
+
+            if not isinstance(snapshot, OrderBookSnapshot):
+                logger.warning(f'Parser returned invalid snapshot type for {symbol}: '
+                               f'{type(snapshot).__name__}')
+                return
+
             # Add ingestion metadata
             message = {
                 **snapshot.model_dump(),
                 'ingested_at': datetime.now(timezone.utc).isoformat(),
                 'source': 'binance_websocket',
             }
-            
+
             # Publish to Redpanda
             # Key by symbol so all BTCUSDT messages go to same partition
             # This ensures ordered processing per symbol in Flink
-            topic = settings.redpanda_topics['raw'] # 'orderbook.raw'
-            
+            topic = settings.redpanda_topics['raw']  # 'orderbook.raw'
+
             success = await self.producer.publish(
                 topic=topic,
-                key=symbol,      # ← Partition by symbol for Flink ordering
-                value=message
-            )
-            
+                key=symbol,  # ← Partition by symbol for Flink ordering
+                value=message)
+
             if success:
-                logger.debug(
-                    f'Published {symbol} to {topic} '
-                    f'(bids: {len(snapshot.bids)}, asks: {len(snapshot.asks)})'
-                )
-            
-            logger.debug(
-                f"Published {symbol} snapshot to {topic} "
-                f"(bids: {len(snapshot.bids)}, asks: {len(snapshot.asks)})"
-            )
-            
+                logger.debug(f'Published {symbol} to {topic} '
+                             f'(bids: {len(snapshot.bids)}, asks: {len(snapshot.asks)})')
+            else:
+                logger.warning(f'Failed to publish {symbol} snapshot to {topic}')
+
         except Exception as e:
-            logger.error(f"Error handling order book for {symbol}: {e}")
-    
+            logger.error(f'Error handling order book for {symbol}: {e}')
+
     async def _log_stats(self) -> None:
         """Log publishing statistics periodically."""
         while self._running:
             await asyncio.sleep(60)  # Log every minute
             stats = self.producer.get_stats()
-            logger.info(
-                f"Stats: sent={stats['messages_sent']} "
-                f"failed = {stats['messages_failed']} "
-                f"symbols = {settings.symbol_list}"
-            )
-    
+            logger.info(f"Stats: sent={stats['messages_sent']} "
+                        f"failed = {stats['messages_failed']} "
+                        f"symbols = {settings.symbol_list}")
+
     async def start(self) -> None:
         """Start the ingestion service. Initializes the Redpanda producer and WebSocket client,
         then starts streaming data.
@@ -148,31 +147,25 @@ class IngestionService:
         logger.info(f"Update Speed: {settings.update_speed}")
         logger.info(f"Redpanda:     {settings.redpanda_bootstrap_servers}")
         logger.info("=" * 50)
-        
+
         self._running = True
-        
+
         try:
             # Connect to Redpanda
             await self.producer.connect()
             # self.producer = self._create_producer()
-            
+
             # Create WebSocket client with our callback
             # The callback (handle_orderbook) connects webSocket client to the Redpanda publisher (after cleaning/validating)
-            self.ws_client = BinanceWebSocketClient(
-                callback=self.handle_orderbook
-            )
+            self.ws_client = BinanceWebSocketClient(callback=self.handle_orderbook)
 
             # run stats logging and websocket concurrently
-            await asyncio.gather(
-                self.ws_client.start(),
-                self._log_stats(),
-                return_exceptions=True
-            )
+            await asyncio.gather(self.ws_client.start(), self._log_stats(), return_exceptions=True)
         except asyncio.CancelledError:
             logger.info("Ingestion service cancelled")
         finally:
             await self.stop()
-    
+
     async def stop(self) -> None:
         """Stop the ingestion service gracefully.
         
@@ -180,23 +173,28 @@ class IngestionService:
         """
         if not self._running:
             return
-        
+
         logger.info("Stopping ingestion service...")
         self._running = False
-        
+
         # Stop WebSocket client
         if self.ws_client:
             await self.ws_client.stop()
-        
+
         # Flush and close Redpanda producer
         await self.producer.close()
-        
+
         stats = self.producer.get_stats()
-        logger.info(
-            f"Ingestion service stopped. "
-            f"Sent: {stats['messages_sent']}, "
-            f"Failed: {stats['messages_failed']}"
-        )
+        if inspect.isawaitable(stats):
+            stats = await stats
+
+        if not isinstance(stats, dict):
+            logger.warning(f'Producer returned non-dict stats: {type(stats).__name__}')
+            stats = {'messages_sent': 0, 'messages_failed': 0}
+
+        logger.info(f'Ingestion service stopped. '
+                    f'Sent: {stats.get("messages_sent", 0)}, '
+                    f'Failed: {stats.get("messages_failed", 0)}')
 
 
 async def main() -> None:
@@ -205,7 +203,7 @@ async def main() -> None:
 
     service = IngestionService()
     setup_signal_handlers(service)
-    
+
     try:
         # creates instances of RedPanda producer and websocket connection to binance
         # publishes websocket to RedPanda topic
@@ -218,13 +216,9 @@ async def main() -> None:
     finally:
         await service.stop()
 
+
 if __name__ == "__main__":
     # Configure loguru
-    logger.add(
-        settings.log_file,
-        rotation="100 MB",
-        retention="7 days",
-        level=settings.log_level
-    )
-    
+    logger.add(settings.log_file, rotation="100 MB", retention="7 days", level=settings.log_level)
+
     asyncio.run(main())
