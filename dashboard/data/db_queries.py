@@ -8,7 +8,6 @@ from typing import Dict, List, Optional
 from dashboard.utils.async_runner import run_async
 from dashboard.utils.formatting import get_valid_timezone
 from src.common.database import DatabaseClient
-from src.common.models import OrderBookWindowedMetrics
 from dashboard.data.redis_queries import get_redis_client
 
 # should streamlit's connection be used instead of DatabaseClient ??
@@ -36,6 +35,29 @@ class DatabaseQueries:
     def __init__(self):
         self.db = get_db_client()
         self.redis = get_redis_client()
+
+    @staticmethod
+    def _normalize_windowed_row(row: Dict) -> Dict:
+        """Ensure dashboard consumers always receive window_duration_seconds."""
+        normalized = dict(row)
+        duration_seconds = normalized.get('window_duration_seconds')
+        if duration_seconds is not None:
+            normalized['window_duration_seconds'] = int(duration_seconds)
+            return normalized
+
+        legacy_duration = normalized.get('window_duration')
+        if legacy_duration is not None:
+            normalized['window_duration_seconds'] = int(legacy_duration)
+            return normalized
+
+        window_start = normalized.get('window_start')
+        window_end = normalized.get('window_end')
+        if isinstance(window_start, datetime.datetime) and isinstance(window_end, datetime.datetime):
+            computed_duration = int((window_end - window_start).total_seconds())
+            if computed_duration > 0:
+                normalized['window_duration_seconds'] = computed_duration
+
+        return normalized
 
     # ===== Metrics Queries ===== #
 
@@ -254,10 +276,7 @@ class DatabaseQueries:
                     LIMIT $3
                 """, symbol, window_type, limit)
 
-                return [
-                    OrderBookWindowedMetrics.model_validate(dict(row)).model_dump(mode='python')
-                    for row in rows
-                ]
+                return [self._normalize_windowed_row(dict(row)) for row in rows]
 
         except Exception as e:
             logger.error(f"Error fetching windowed aggregates: {e}")
@@ -298,7 +317,7 @@ class DatabaseQueries:
             row = await self.db.fetch_latest_windowed_metrics(symbol, window_type)
             if not row:
                 return None
-            return OrderBookWindowedMetrics.model_validate(row).model_dump(mode='python')
+            return self._normalize_windowed_row(row)
 
         except Exception as e:
             logger.error(f"Error fetching latest windowed: {e}")

@@ -29,12 +29,33 @@ from dashboard.utils.async_runner import run_async
 # fig = px.line(df, x='time', y='mid_price')
 # st.plotly_chart(fig)
 
-def create_imbalance_chart(data: List[Dict], alerts: List[Dict]):
-    df = pd.DataFrame(data)
-
-    if df.empty or 'time' not in df.columns:
+def _get_timeseries_data(
+        symbol: str,
+        hours: int = 1,
+        interval: str = '5m',
+    ):
+    data_client = st.session_state.get("data_layer")
+    if data_client is None:
         return None
 
+    data = run_async(data_client.get_time_series_last_n_hours(symbol, hours, interval), timeout=10)
+    return data
+
+def _get_alerts(
+        symbol: str,
+        limit: int = 100
+    ):
+    data_client = st.session_state.get("data_layer")
+    if data_client is None:
+        return None
+
+    alerts = run_async(data_client.get_recent_alerts(
+        symbol=symbol,
+        limit=limit 
+    ))
+    return alerts
+
+def create_imbalance_chart(df, alerts: List[Dict]):
     # dual-axis = left = imbalance %; right = price
     fig = make_subplots(specs=[[{ 'secondary_y': True }]])
 
@@ -68,25 +89,23 @@ def create_imbalance_chart(data: List[Dict], alerts: List[Dict]):
 
 
 @st.fragment()
-def render_timeseries_chart(symbol: str, hours: int = 1, interval: str = '5m', refresh_rate: int = 10000):
+def render_timeseries_chart(symbol: str, hours: int = 1, interval: str = '5m', timezone_pref: str = 'America/New_York', refresh_rate: int = 10000):
     st_autorefresh(interval=refresh_rate, key="data_timeseries_refresh")
 
-    data_client = st.session_state.data_layer
-    data = run_async(data_client.get_time_series_last_n_hours(symbol, hours, interval), timeout=10)
+    data = _get_timeseries_data(symbol, hours, interval)
 
-    if data is None:
+    df = pd.DataFrame(data)
+
+    if df.empty or 'time' not in df.columns:
         st.warning(f'failed to load timeseries chart data for {symbol}')
-        return
+        return None
 
-    alerts = run_async(data_client.get_recent_alerts(
-        symbol=symbol,
-        limit=100  # Get alerts within the time range
-    ))
+    alerts = _get_alerts(symbol, 100)
 
-    print(f'timeseries data: {json.dumps(data[:1], indent=4, default=str)}')
-    print(f'alert data: {json.dumps(alerts[:1], indent=4, default=str)}')
+    # print(f'timeseries data: {json.dumps(data[:1], indent=4, default=str)}')
+    # print(f'alert data: {json.dumps(alerts[:1], indent=4, default=str)}')
 
-    fig = create_imbalance_chart(data, alerts)
+    fig = create_imbalance_chart(df, alerts)
 
     if fig is None:
         st.warning('Failed to find valid data for timeseries chart')

@@ -1,5 +1,5 @@
 """Pydantic data models."""
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Tuple, Optional
 from datetime import datetime
 from enum import Enum
@@ -263,7 +263,11 @@ class OrderBookWindowedMetrics(BaseModel):
     window_type: str = Field(..., min_length=1, description='Window type')
     window_start: datetime = Field(..., description='Window start timestamp')
     window_end: datetime = Field(..., description='Window end timestamp')
-    window_duration_seconds: int = Field(..., ge=1, description='Window duration in seconds')
+    window_duration_seconds: Optional[int] = Field(
+        None,
+        ge=1,
+        description='Window duration in seconds',
+        validation_alias=AliasChoices('window_duration_seconds', 'window_duration'))
 
     avg_mid_price: Optional[float] = Field(None, gt=0)
     avg_imbalance: Optional[float] = Field(None, ge=-1.0, le=1.0)
@@ -320,6 +324,11 @@ class OrderBookWindowedMetrics(BaseModel):
         """Ensure window bounds are valid and time is populated."""
         if self.window_end < self.window_start:
             raise ValueError('window_end must be greater than or equal to window_start')
+        if self.window_duration_seconds is None:
+            duration_seconds = int((self.window_end - self.window_start).total_seconds())
+            if duration_seconds <= 0:
+                raise ValueError('window_duration_seconds must be greater than 0')
+            self.window_duration_seconds = duration_seconds
         if self.time is None:
             self.time = self.window_end
         return self

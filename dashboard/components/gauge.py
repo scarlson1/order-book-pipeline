@@ -87,7 +87,7 @@ def render_countdown_from_timestamp(ts, ttl_seconds: int = 6) -> None:
 def _render_last_updated(ts, interval: int = 100):
     st_autorefresh(interval=interval, key='age_imb_gauge')
 
-    st.write(ts)
+    # st.write(ts)
     now = datetime.now(timezone.utc)
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)

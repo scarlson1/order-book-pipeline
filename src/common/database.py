@@ -84,6 +84,29 @@ class DatabaseClient:
         return 'copy' in message and ('not supported' in message or 'requires admin' in message
                                       or 'permission denied' in message)
 
+    @staticmethod
+    def _normalize_windowed_row(row: Dict) -> Dict:
+        """Ensure windowed rows always include window_duration_seconds."""
+        normalized = dict(row)
+        duration_seconds = normalized.get('window_duration_seconds')
+        if duration_seconds is not None:
+            normalized['window_duration_seconds'] = int(duration_seconds)
+            return normalized
+
+        legacy_duration = normalized.get('window_duration')
+        if legacy_duration is not None:
+            normalized['window_duration_seconds'] = int(legacy_duration)
+            return normalized
+
+        window_start = normalized.get('window_start')
+        window_end = normalized.get('window_end')
+        if isinstance(window_start, datetime) and isinstance(window_end, datetime):
+            computed_duration = int((window_end - window_start).total_seconds())
+            if computed_duration > 0:
+                normalized['window_duration_seconds'] = computed_duration
+
+        return normalized
+
     async def _write_chunk_with_executemany(
         self,
         table_name: str,
@@ -338,6 +361,7 @@ class DatabaseClient:
             row = await conn.fetchrow(
                 """
                 SELECT time, symbol, window_type, window_start, window_end,
+                       EXTRACT(EPOCH FROM (window_end - window_start))::INT AS window_duration_seconds,
                        avg_mid_price,
                        avg_imbalance, avg_spread_bps, avg_total_volume,
                        sample_count, window_velocity
@@ -348,8 +372,7 @@ class DatabaseClient:
             """, symbol, window_type)
             if not row:
                 return None
-            validated = OrderBookWindowedMetrics.model_validate(dict(row))
-            return validated.model_dump(mode='python')
+            return self._normalize_windowed_row(dict(row))
 
     # ===== STATS METHODS ===== #
 
