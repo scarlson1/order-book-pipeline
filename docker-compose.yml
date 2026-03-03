@@ -254,7 +254,8 @@ services:
     expose:
       - '6123'
     ports:
-      - '8081:8081' # Flink Web UI
+      # - '8081:8081' # Flink Web UI
+      - '18091:8081'
     extra_hosts:
       - 'host.docker.internal:127.0.0.1' #// Linux
       - 'host.docker.internal:host-gateway' #// Access services on the host machine from within the Docker container

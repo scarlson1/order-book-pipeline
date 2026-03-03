@@ -152,11 +152,19 @@ class RedisConsumer:
     async def _handle_cache_metrics(self, msg):
         """Handle messages from the orderbook.metrics topic.
         
-        Message format expected:
+        Message format expected (either nested or flat):
         {
             "symbol": "BTCUSDT",
             "timestamp": "2024-01-01T00:00:00Z",
             "metrics": {...}
+        }
+        OR
+        {
+            "symbol": "BTCUSDT",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "mid_price": ...,
+            "imbalance_ratio": ...,
+            ...
         }
         
         Caches metrics with 60s TTL.
@@ -171,14 +179,26 @@ class RedisConsumer:
             logger.warning('Message missing "symbol" field')
             return
 
-        metrics = value.get('metrics')
-        if metrics:
-            await self.redis.insert_metrics(
-                symbol=symbol,
-                metrics=metrics,
-                ttl=self.METRICS_TTL_SECONDS
-            )
-            logger.debug(f'Cached metrics for {symbol} (TTL: {self.METRICS_TTL_SECONDS}s)')
+        metrics = value.get('metrics') if isinstance(value.get('metrics'), dict) else value
+        if not isinstance(metrics, dict):
+            logger.warning(f'Invalid metrics payload for {symbol}: expected dict, got {type(metrics)}')
+            return
+
+        metrics_payload = dict(metrics)
+        metrics_payload.setdefault('symbol', symbol)
+
+        # Normalize timestamp naming for dashboard consumers.
+        if 'time' not in metrics_payload and metrics_payload.get('timestamp') is not None:
+            metrics_payload['time'] = metrics_payload['timestamp']
+        if 'timestamp' not in metrics_payload and metrics_payload.get('time') is not None:
+            metrics_payload['timestamp'] = metrics_payload['time']
+
+        await self.redis.insert_metrics(
+            symbol=symbol,
+            metrics=metrics_payload,
+            ttl=self.METRICS_TTL_SECONDS
+        )
+        logger.debug(f'Cached metrics for {symbol} (TTL: {self.METRICS_TTL_SECONDS}s)')
 
     async def _handle_cache_statistics(self, msg):
         """Handle messages from the orderbook.metrics.windowed topic.
