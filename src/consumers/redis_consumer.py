@@ -59,6 +59,10 @@ class RedisConsumer:
         self._snapshot_min_write_interval_seconds = (
             settings.redis_snapshot_min_write_interval_seconds
         )
+        self._snapshot_ttl_seconds = max(
+            self.SNAPSHOT_TTL_SECONDS,
+            self._snapshot_min_write_interval_seconds * 2,
+        )
         self._last_snapshot_write_at: dict[str, float] = {}
 
 
@@ -271,7 +275,7 @@ class RedisConsumer:
 
         symbol = value.get('symbol')
         if not symbol:
-            logger.warning('Snapshot message missing "symbol" field')
+            logger.warning('Alert message missing "symbol" field')
             return
 
         success = await self.redis.add_alert(
@@ -295,7 +299,7 @@ class RedisConsumer:
         # extract snapshot data {bids: [...], asks: [...], timestamp: ...}
         symbol = value.get('symbol')
         if not symbol:
-            logger.warning('Alert message missing "symbol" field')
+            logger.warning('Snapshot message missing "symbol" field')
             return
 
         symbol_key = symbol.upper()
@@ -316,7 +320,7 @@ class RedisConsumer:
         success = await self.redis.cache_orderbook(
             symbol=symbol_key,
             orderbook=snapshot_data,
-            ttl=self.SNAPSHOT_TTL_SECONDS,
+            ttl=self._snapshot_ttl_seconds,
         )
 
         if success:
