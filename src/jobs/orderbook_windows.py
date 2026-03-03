@@ -190,7 +190,8 @@ class WindowMetadataFunction(ProcessWindowFunction):
         result['window_start'] = window_start.isoformat()
         result['window_end'] = window_end.isoformat()
         result['time'] = result['window_end']
-        out.collect(result)
+        
+        yield result
 
 
 def main():
