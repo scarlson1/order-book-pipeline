@@ -75,10 +75,9 @@ class Settings(BaseSettings):
     
 
     # ===== Flink ===== #
-    flink_host: str
+    flink_host: str # service name when running locally, VM IP when deployed
     flink_parallelism: int
     flink_port: int = 8081
-    # flink_ui_url: str # = "http://localhost:8081"
 
     # downsampling_enabled: bool
     # downsample_bucket_seconds: int
