@@ -1,8 +1,6 @@
 import sys
 from pathlib import Path
 
-from dashboard.components.gauge import render_imbalance_gauge
-
 # Add project root to sys.path for Streamlit Cloud compatibility
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -11,6 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import streamlit as st
 
 from dashboard.components.alert_feed import render_alert_feed
+from dashboard.components.gauge import render_imbalance_gauge
 from dashboard.components.imbalance_trend import render_imbalance_trend
 from dashboard.components.metrics_cards import render_metrics_cards
 from dashboard.components.multi_metric_windows import render_multi_metric_windows
