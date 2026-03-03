@@ -6,9 +6,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: postgresql://root@localhost:26257/defaultdb?sslmode=disable
-      POSTGRES_HOST: localhost
-      POSTGRES_PORT: 26257
+      DATABASE_URL: postgresql://root@127.0.0.1:26258/defaultdb?sslmode=disable
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 26258
       POSTGRES_DB: defaultdb
       POSTGRES_USER: root
       POSTGRES_PASSWORD: ''
@@ -51,15 +51,15 @@ jobs:
       - name: Start CockroachDB
         run: |
           docker run -d --name cockroachdb \
-            -p 26257:26257 \
+            -p 26258:26258 \
             -p 8080:8080 \
             cockroachdb/cockroach:latest-v25.2 \
-            start-single-node --insecure --listen-addr=localhost:26257 --http-addr=0.0.0.0:8080 --advertise-addr=localhost
+            start-single-node --insecure --listen-addr=localhost:26257 --sql-addr=0.0.0.0:26258 --http-addr=0.0.0.0:8080 --advertise-addr=localhost:26257 --accept-sql-without-tls
 
       - name: Wait for CockroachDB
         run: |
           for i in {1..30}; do
-            if docker exec cockroachdb cockroach sql --insecure --host=localhost:26257 -e "SELECT 1" >/dev/null 2>&1; then
+            if docker exec cockroachdb cockroach sql --insecure --host=localhost:26258 -e "SELECT 1" >/dev/null 2>&1; then
               echo 'CockroachDB is ready'
               exit 0
             fi
