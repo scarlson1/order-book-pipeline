@@ -69,7 +69,9 @@ jobs:
           exit 1
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: |
+          uv pip install --system -e .
+          uv pip install --system pytest pytest-asyncio pytest-cov
 
       - name: Install dbmate
         run: |
@@ -84,4 +86,4 @@ jobs:
           dbmate --migrations-dir db/migrations status
 
       - name: Run tests
-        run: uv run pytest
+        run: python -m pytest
