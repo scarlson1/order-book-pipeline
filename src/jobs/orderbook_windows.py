@@ -17,10 +17,16 @@ from pyflink.common.typeinfo import Types
 from pyflink.datastream.window import SlidingEventTimeWindows, TumblingProcessingTimeWindows
 from pyflink.datastream.functions import AggregateFunction
 
-from src.common.utils import apply_kafka_security
-from src.common.models import OrderBookMetrics, OrderBookWindowedMetrics
-from src.config import settings
-from src.jobs.orderbook_alerts import parse_metrics
+try:
+    from src.common.utils import apply_kafka_security
+    from src.common.models import OrderBookMetrics, OrderBookWindowedMetrics
+    from src.config import settings
+    from src.jobs.orderbook_alerts import parse_metrics
+except ModuleNotFoundError:
+    from common.utils import apply_kafka_security
+    from common.models import OrderBookMetrics, OrderBookWindowedMetrics
+    from config import settings
+    from jobs.orderbook_alerts import parse_metrics
 
 # ===== Aggregate Functions ===== #
 

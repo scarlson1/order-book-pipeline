@@ -61,9 +61,14 @@ except ModuleNotFoundError:
         """Fallback base class when PyFlink is unavailable."""
 
 
-from src.common.utils import apply_kafka_security
-from src.common.models import Alert, AlertType, OrderBookMetrics, Severity
-from src.config import settings
+try:
+    from src.common.utils import apply_kafka_security
+    from src.common.models import Alert, AlertType, OrderBookMetrics, Severity
+    from src.config import settings
+except ModuleNotFoundError:
+    from common.utils import apply_kafka_security
+    from common.models import Alert, AlertType, OrderBookMetrics, Severity
+    from config import settings
 
 # TODO: which parts need to be calculated from the windowed metrics ??
 

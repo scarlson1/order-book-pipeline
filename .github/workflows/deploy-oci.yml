@@ -124,5 +124,7 @@ jobs:
             EOF
 
             docker compose -f compose.oci.yml --env-file .env.oci run --rm db-migrate
-            docker compose -f compose.oci.yml --env-file .env.oci up -d --build ingestion consumers flink-jobmanager flink-taskmanager flink-job-submitter
+            docker compose -f compose.oci.yml --env-file .env.oci up -d --build ingestion consumers
+            docker compose -f compose.oci.yml --env-file .env.oci up -d --build --force-recreate flink-jobmanager flink-taskmanager
+            docker compose -f compose.oci.yml --env-file .env.oci run --rm flink-job-submitter
             docker image prune -f

@@ -14,7 +14,15 @@ Documentation:
 - Flink Watermarks: https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/
 """
 
-from common.utils import apply_kafka_security
+try:
+    from src.common.utils import apply_kafka_security
+    from src.config import settings
+    from src.ingestion.metrics_calculator import calculate_metrics
+except ModuleNotFoundError:
+    from common.utils import apply_kafka_security
+    from config import settings
+    from ingestion.metrics_calculator import calculate_metrics
+
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.datastream.connectors.kafka import (
     KafkaSource,
@@ -27,15 +35,13 @@ from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.typeinfo import Types
 import json
 
-from src.config import settings
-from src.ingestion.metrics_calculator import calculate_metrics
-
 # TODO: parse into OrderbookMetrics and then back to json using .to_dict()
 
 # TODO: add notes to README about offset strategy ('latest' & run batch to fill gaps ??)
 # parse with OrderBookMetrics to use built in calc methods (mid-price, spread, etc.) ??
 
 # ===== Processing Functions ===== #
+
 
 def parse_orderbook(raw_message: str) -> dict:
     """Parse raw JSON order book message."""
@@ -44,26 +50,26 @@ def parse_orderbook(raw_message: str) -> dict:
 
 # ===== Main Flink Job ===== #
 
+
 def main():
     # Initialize Flink execution environment
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/python/datastream_tutorial/
     env = StreamExecutionEnvironment.get_execution_environment()
     env.enable_checkpointing(10 * 1000)
     env.set_parallelism(settings.flink_parallelism)
-    
+
     # Configure Kafka/Redpanda source
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/
     source_builder = (
         KafkaSource.builder()
-        .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
-        .set_topics(settings.redpanda_topics['raw'])
-        .set_group_id('flink-orderbook-processor')
-        .set_starting_offsets(KafkaOffsetsInitializer.latest())
-        .set_value_only_deserializer(SimpleStringSchema())
-        # .build()
+            .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
+            .set_topics(settings.redpanda_topics['raw'])
+            .set_group_id('flink-orderbook-processor')
+            .set_starting_offsets(KafkaOffsetsInitializer.latest())
+            .set_value_only_deserializer(SimpleStringSchema())
     )
     source = apply_kafka_security(source_builder).build()
-    
+
     # Configure watermark strategy for event time processing
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/
     watermark_strategy = (
@@ -71,44 +77,34 @@ def main():
             .for_bounded_out_of_orderness(Duration.of_seconds(5))
             .with_idleness(Duration.of_seconds(10))
     )
-    
+
     # Build processing pipeline
-    raw_stream = env.from_source(
-        source=source,
-        watermark_strategy=watermark_strategy,
-        source_name='Redpanda OrderBook Raw'
-    )
-    
+    raw_stream = env.from_source(source=source,
+                                 watermark_strategy=watermark_strategy,
+                                 source_name='Redpanda OrderBook Raw')
+
     # Parse → Calculate → Filter
-    metrics_stream = (
-        raw_stream
-        .map(parse_orderbook)
-        .filter(lambda x: x is not None)
-        .map(calculate_metrics)
-        .filter(lambda x: x is not None)
-    )
-    
+    metrics_stream = (raw_stream.map(parse_orderbook).filter(lambda x: x is not None).map(
+        calculate_metrics).filter(lambda x: x is not None))
+
     # Generate alerts from metrics (moved to orderbook_alert)
     # alerts_stream = (
     #     metrics_stream
     #     .map(check_alerts)
     #     .filter(lambda x: x is not None)
     # )
-    
+
     # Configure Kafka/Redpanda sink for metrics
     metrics_sink_builder = (
         KafkaSink.builder()
-        .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
-        .set_record_serializer(
-            KafkaRecordSerializationSchema.builder()
+            .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
+            .set_record_serializer(KafkaRecordSerializationSchema.builder()
             .set_topic(settings.redpanda_topics['metrics'])
-            .set_value_serialization_schema(SimpleStringSchema())
-            .build()
-        )
+            .set_value_serialization_schema(SimpleStringSchema()).build())
         # .build()
     )
     metrics_sink = apply_kafka_security(metrics_sink_builder).build()
-    
+
     # Configure Kafka/Redpanda sink for alerts (moved to orderbook_alert)
     # alerts_sink = (
     #     KafkaSink.builder()
@@ -121,11 +117,11 @@ def main():
     #     )
     #     .build()
     # )
-    
+
     # Serialize and sink
     metrics_stream.map(json.dumps, output_type=Types.STRING()).sink_to(metrics_sink)
     # alerts_stream.map(json.dumps).sink_to(alerts_sink) # (moved to orderbook_alert)
-    
+
     # Execute
     env.execute('OrderBook Metrics Processor')
 
@@ -165,7 +161,6 @@ if __name__ == '__main__':
 #         """
 #     t_env.execute_sql(source_ddl)
 #     return table_name
-    
 
 # # Sink: orderbook.metrics (Kafka/Redpanda)
 # def create_metrics_sink(t_env):
@@ -187,7 +182,6 @@ if __name__ == '__main__':
 #         """
 #     t_env.execute_sql(source_ddl)
 #     return table_name
-
 
 # def process_metrics():
 #     env = StreamExecutionEnvironment.get_execution_environment()
@@ -219,6 +213,6 @@ if __name__ == '__main__':
 #                 WHERE cardinality(bids) > 0 AND cardinality(asks) > 0;
 #             """
 #         ).wait()
-    
+
 #     except Exception as e:
 #         print(f'Failed writing records from Kafka to JDBC: {str(e)}')

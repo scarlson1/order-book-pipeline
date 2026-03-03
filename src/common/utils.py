@@ -1,9 +1,12 @@
 import asyncio
 import signal
-from loguru import logger
 from typing import Awaitable, Protocol, runtime_checkable
+from loguru import logger
 
-from src.config import settings
+try:
+    from src.config import settings
+except ModuleNotFoundError:
+    from config import settings
 
 
 # 1. Define the Protocol
