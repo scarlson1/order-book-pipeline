@@ -85,7 +85,13 @@ def render_multi_metric_windows(symbol: str, timezone_pref: str = 'America/New_Y
         return
     
     df = pd.DataFrame(rows)
-    df['time'] = df['time'].dt.tz_convert(timezone_pref)
+
+    # convert UTC to specified timezone
+    if 'time' in df.columns:
+        df['time'] = df['time'].dt.tz_convert(timezone_pref)
+    else:
+        st.error(f"Expected 'time' column not found in data columns: {df.columns.tolist()}")
+        return
 
     fig = _create_multi_metric_windows(df, symbol, timezone_pref)
 
