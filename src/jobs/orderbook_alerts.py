@@ -17,30 +17,55 @@ Documentation:
 
 import json
 from typing import Tuple
+
 from loguru import logger
 from pydantic import ValidationError
-from pyflink.datastream import StreamExecutionEnvironment
-from pyflink.datastream.connectors.kafka import (
-    KafkaSource,
-    KafkaSink,
-    KafkaOffsetsInitializer,
-    KafkaRecordSerializationSchema,
-    DeliveryGuarantee
-)
-from pyflink.datastream.state import ValueStateDescriptor
-from pyflink.datastream.window import SlidingEventTimeWindows
-from pyflink.datastream.functions import AggregateFunction, KeyedProcessFunction, KeyedCoProcessFunction
-from pyflink.common import WatermarkStrategy, Duration
-from pyflink.common.serialization import SimpleStringSchema
-from pyflink.common.time import Time
-from pyflink.common.typeinfo import Types
+
+try:
+    from pyflink.datastream import StreamExecutionEnvironment
+    from pyflink.datastream.connectors.kafka import (KafkaSource, KafkaSink,
+                                                     KafkaOffsetsInitializer,
+                                                     KafkaRecordSerializationSchema,
+                                                     DeliveryGuarantee)
+    from pyflink.datastream.state import ValueStateDescriptor
+    from pyflink.datastream.window import SlidingEventTimeWindows
+    from pyflink.datastream.functions import AggregateFunction, KeyedProcessFunction, KeyedCoProcessFunction
+    from pyflink.common import WatermarkStrategy, Duration
+    from pyflink.common.serialization import SimpleStringSchema
+    from pyflink.common.time import Time
+    from pyflink.common.typeinfo import Types
+    PYFLINK_AVAILABLE = True
+except ModuleNotFoundError:
+    StreamExecutionEnvironment = None
+    KafkaSource = None
+    KafkaSink = None
+    KafkaOffsetsInitializer = None
+    KafkaRecordSerializationSchema = None
+    DeliveryGuarantee = None
+    ValueStateDescriptor = None
+    SlidingEventTimeWindows = None
+    WatermarkStrategy = None
+    Duration = None
+    SimpleStringSchema = None
+    Time = None
+    Types = None
+    PYFLINK_AVAILABLE = False
+
+    class AggregateFunction:
+        """Fallback base class when PyFlink is unavailable."""
+
+    class KeyedProcessFunction:
+        """Fallback base class when PyFlink is unavailable."""
+
+    class KeyedCoProcessFunction:
+        """Fallback base class when PyFlink is unavailable."""
+
 
 from src.common.utils import apply_kafka_security
 from src.common.models import Alert, AlertType, OrderBookMetrics, Severity
 from src.config import settings
 
 # TODO: which parts need to be calculated from the windowed metrics ??
-
 
 # ===== Parsing ===== #
 
@@ -56,17 +81,20 @@ def parse_metrics(raw_message: str) -> OrderBookMetrics | None:
         print(f"Validation Error:\n{e.json(indent=4)}")
         return None
 
+
 def get_symbol(metric: OrderBookMetrics | dict) -> str:
     """Extract symbol from either model or dict payload."""
     return metric["symbol"] if isinstance(metric, dict) else metric.symbol
 
 
 def check_extreme_imbalance(metrics: OrderBookMetrics) -> Alert | None:
-    """Emit an alert when |imbalance_ratio| exceeds the HIGH threshold.
+    """Emit an alert when |imbalance_ratio| exceeds the MEDIUM threshold.
 
     Compares the absolute value of `imbalance_ratio` against
-    `settings.alert_threshold_high` (default 0.70).  Returns a CRITICAL
-    alert above 0.85, HIGH otherwise.
+    `settings.alert_threshold_medium` (default 0.50). Returns:
+    - CRITICAL above 0.85
+    - HIGH at/above `settings.alert_threshold_high`
+    - MEDIUM at/above `settings.alert_threshold_medium`
 
     Args:
         metrics: Parsed OrderBookMetrics dictionary.
@@ -82,11 +110,10 @@ def check_extreme_imbalance(metrics: OrderBookMetrics) -> Alert | None:
     imbalance = abs(metrics.imbalance_ratio if metrics.imbalance_ratio else 0)
 
     if imbalance >= settings.alert_threshold_medium:
-        severity = (
-            Severity.CRITICAL if imbalance >= 0.85 else
-            Severity.HIGH if imbalance >= settings.alert_threshold_medium else 
-            Severity.MEDIUM
-        )
+        severity = (Severity.CRITICAL if imbalance >= 0.85 else Severity.HIGH
+                    if imbalance >= settings.alert_threshold_high else Severity.MEDIUM)
+        threshold_value = (settings.alert_threshold_medium
+                           if severity == Severity.MEDIUM else settings.alert_threshold_high)
 
         alert = Alert(
             symbol=metrics.symbol,
@@ -95,14 +122,14 @@ def check_extreme_imbalance(metrics: OrderBookMetrics) -> Alert | None:
             severity=severity,
             message=f"Extreme imbalance detected: {imbalance:.2%}",
             metric_value=imbalance,
-            threshold_value=settings.alert_threshold_high,
+            threshold_value=threshold_value,
         )
         return alert
 
     return None
 
-# ===== KeyedProcessFunctions ===== #
 
+# ===== KeyedProcessFunctions ===== #
 """
 KeyedProcessFunction Explanation:
 
@@ -145,6 +172,7 @@ References:
 - PyFlink KeyedProcessFunction: https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/datastream/operators/process_function/#the-keyedprocessfunction
 """
 
+
 # RichFunction -> provided open() and close() methods
 class ImbalanceFlipDetector(KeyedProcessFunction):
     """Detects sign changes in imbalance_ratio (buy pressure → sell pressure or vice-versa).
@@ -176,12 +204,12 @@ class ImbalanceFlipDetector(KeyedProcessFunction):
                 {symbol: "BTCUSDT", imbalance_ratio: -0.3}]
         Output: Alert(IMBALANCE_FLIP) - sign changed from positive to negative
     """
-    
+
     def __init__(self):
         """Initialize the detector."""
         # State descriptor for storing previous imbalance per key (symbol). Declared here but initialized in open()
         self.prev_imbalance_state = None
-        
+
     def open(self, runtime_context):
         """Called when the function is initialized.
         This is where we register our state descriptors with the runtime context.
@@ -192,11 +220,11 @@ class ImbalanceFlipDetector(KeyedProcessFunction):
         # Types.FLOAT() specifies the type of values stored
         state_descriptor = ValueStateDescriptor(
             'prev_imbalance',  # State name - must be unique per function
-            Types.FLOAT()      # Type info for serialization
+            Types.FLOAT()  # Type info for serialization
         )
         # Register the state with the runtime context
         self.prev_imbalance_state = runtime_context.get_state(state_descriptor)
-    
+
     def process_element(self, value, ctx):
         """Process each incoming metrics element.
         
@@ -214,16 +242,17 @@ class ImbalanceFlipDetector(KeyedProcessFunction):
         Yields:
             Alert if a sign change is detected, None otherwise
         """
-        curr_imbalance = value.get('imbalance_ratio') if isinstance(value, dict) else value.imbalance_ratio
-        
+        curr_imbalance = value.get('imbalance_ratio') if isinstance(value,
+                                                                    dict) else value.imbalance_ratio
+
         # Retrieve previous imbalance from keyed state (None if no previous value exists)
         prev_imbalance = self.prev_imbalance_state.value()
-        
+
         # Check for sign change: if both exist and have opposite signs
         if prev_imbalance is not None and (prev_imbalance * curr_imbalance < 0):
             # Determine direction: prev was positive = buy pressure, now negative = sell
             direction = "BUY→SELL" if prev_imbalance > 0 else "SELL→BUY"
-            
+
             alert = Alert(
                 symbol=get_symbol(value),
                 alert_type=AlertType.IMBALANCE_FLIP,
@@ -231,10 +260,9 @@ class ImbalanceFlipDetector(KeyedProcessFunction):
                 message=f"Imbalance flip detected: {direction}",
                 metric_value=curr_imbalance,
                 threshold_value=0.0,  # Any sign change triggers this
-                imbalance_ratio=curr_imbalance
-            )
+                imbalance_ratio=curr_imbalance)
             yield alert
-        
+
         # Update state with current imbalance for next comparison
         self.prev_imbalance_state.update(curr_imbalance)
 
@@ -276,18 +304,16 @@ class AlertRateLimiter(KeyedProcessFunction):
         Output: Only the first alert is emitted, next 4 are suppressed
         After 60 seconds: Suppression clears, next alert can fire
     """
-    
+
     def __init__(self, cooldown_ms: int = 60_000):
         self.cooldown_ms = cooldown_ms
-        self.suppressed_state = None # State descriptor will be initialized in open()
-        
+        self.suppressed_state = None  # State descriptor will be initialized in open()
+
     def open(self, runtime_context):
         """Initialize state backend. Registers the suppressed state descriptor with the runtime context."""
-        self.suppressed_state = runtime_context.get_state(ValueStateDescriptor(
-            'suppressed',
-            Types.BOOLEAN() 
-        ))
-    
+        self.suppressed_state = runtime_context.get_state(
+            ValueStateDescriptor('suppressed', Types.BOOLEAN()))
+
     def process_element(self, value, ctx):
         """Process incoming alert with rate limiting logic.
         
@@ -302,21 +328,21 @@ class AlertRateLimiter(KeyedProcessFunction):
             Alert if not suppressed, None if suppressed
         """
         is_suppressed = self.suppressed_state.value()
-        
+
         # rate limiting step: drop if alert is suppressed
         if is_suppressed:
             return
-        
+
         # Not suppressed - forward the alert
         yield value
-        
+
         # Mark as suppressed to prevent future alerts until timer fires
         self.suppressed_state.update(True)
-        
+
         # Register a processing-time timer to clear suppression after cooldown
         timer_timestamp = ctx.timer_service().current_processing_time() + self.cooldown_ms
         ctx.timer_service().register_processing_time_timer(timer_timestamp)
-    
+
     def on_timer(self, timestamp: int, ctx: 'KeyedProcessFunction.OnTimerContext'):
         """
         This is the timer callback that clears the suppression flag,
@@ -327,11 +353,8 @@ class AlertRateLimiter(KeyedProcessFunction):
             ctx: OnTimerContext providing additional timer-specific methods
         """
         self.suppressed_state.clear()
-        key = (
-            ctx.get_current_key() if hasattr(ctx, "get_current_key")
-            else ctx.getCurrentKey() if hasattr(ctx, "getCurrentKey")
-            else "unknown"
-        )
+        key = (ctx.get_current_key() if hasattr(ctx, "get_current_key") else
+               ctx.getCurrentKey() if hasattr(ctx, "getCurrentKey") else "unknown")
         logger.info(f'Alert suppression ended for {key}')
         # PyFlink timer callbacks are consumed via `yield from`; return
         # an empty iterable when no records should be emitted.
@@ -350,18 +373,17 @@ class SpreadWideningJoinFunction(KeyedCoProcessFunction):
     def open(self, runtime_context):
         # store the latest windowed average spread per symbol
         self.avg_spread_state = runtime_context.get_state(
-            ValueStateDescriptor('avg_spread', Types.DOUBLE())
-        )
+            ValueStateDescriptor('avg_spread', Types.DOUBLE()))
 
     # process metrics stream (left input)
     def process_element1(self, value, ctx):
-        current_spread = value.spread_bps # value.get('spread_bps') if isinstance(value, dict) else value.spread_bps
+        current_spread = value.spread_bps  # value.get('spread_bps') if isinstance(value, dict) else value.spread_bps
 
         avg_spread = self.avg_spread_state.value()
 
         # compare is we have an average to compare against
         if avg_spread is not None and avg_spread > 0:
-            threshold = settings.spread_alert_multiplier # e.g. 2.0
+            threshold = settings.spread_alert_multiplier  # e.g. 2.0
             if current_spread > avg_spread * threshold:
                 yield Alert(
                     symbol=value.symbol,
@@ -369,8 +391,7 @@ class SpreadWideningJoinFunction(KeyedCoProcessFunction):
                     severity=Severity.HIGH,
                     message=f'Spread {current_spread:.2f} bps > {threshold}× avg ({avg_spread:.2f})',
                     metric_value=current_spread,
-                    threshold_value=avg_spread * threshold
-                )
+                    threshold_value=avg_spread * threshold)
 
     # process windowed average stream (right input)
     def process_element2(self, value, ctx):
@@ -392,11 +413,9 @@ class VelocitySpikeDetector(KeyedProcessFunction):
 
     def open(self, runtime_context):
         self.prev_state = runtime_context.get_state(
-            ValueStateDescriptor('prev_imbalance', Types.FLOAT())
-        )
+            ValueStateDescriptor('prev_imbalance', Types.FLOAT()))
         self.prev_timestamp_state = runtime_context.get_state(
-            ValueStateDescriptor('prev_timestamp', Types.LONG())
-        )
+            ValueStateDescriptor('prev_timestamp', Types.LONG()))
 
     def process_element(self, value, ctx):
         """Iterate through each item, calc delta imbalance / delta time -> create alert if above threshold"""
@@ -408,7 +427,7 @@ class VelocitySpikeDetector(KeyedProcessFunction):
 
         # only compute velocity if we have previous event
         if prev_imbalance is not None and prev_timestamp is not None:
-            dt = (curr_timestamp - prev_timestamp) / 1000.0 # ms -> seconds
+            dt = (curr_timestamp - prev_timestamp) / 1000.0  # ms -> seconds
 
             if dt > 0:
                 velocity = abs(curr_imbalance - prev_imbalance) / dt
@@ -420,11 +439,11 @@ class VelocitySpikeDetector(KeyedProcessFunction):
                         symbol=value.symbol,
                         alert_type=AlertType.VELOCITY_SPIKE,
                         severity=severity,
-                        message=f'Velocity {velocity:.3f}/s exceeds threshold {settings.velocity_threshold}',
+                        message=
+                        f'Velocity {velocity:.3f}/s exceeds threshold {settings.velocity_threshold}',
                         metric_value=velocity,
                         threshold_value=settings.velocity_threshold,
-                        imbalance_ratio=curr_imbalance
-                    )
+                        imbalance_ratio=curr_imbalance)
 
         # update state
         self.prev_state.update(curr_imbalance)
@@ -433,17 +452,15 @@ class VelocitySpikeDetector(KeyedProcessFunction):
 
 # ===== Aggregate Functions ===== #
 
+
 class SpreadAverageAggregateFunction(AggregateFunction):
     """Compute rolling average spread and keep symbol in the output."""
 
     def create_accumulator(self) -> Tuple[str, float, int]:
         return "", 0.0, 0  # [symbol, spread_sum, count]
 
-    def add(
-        self,
-        value: OrderBookMetrics,
-        accumulator: Tuple[str, float, int]
-    ) -> Tuple[str, float, int]:
+    def add(self, value: OrderBookMetrics, accumulator: Tuple[str, float,
+                                                              int]) -> Tuple[str, float, int]:
         symbol = value.symbol or accumulator[0]
         return symbol, accumulator[1] + value.spread_bps, accumulator[2] + 1
 
@@ -452,11 +469,7 @@ class SpreadAverageAggregateFunction(AggregateFunction):
             return accumulator[0], 0.0
         return accumulator[0], accumulator[1] / accumulator[2]
 
-    def merge(
-        self,
-        a: Tuple[str, float, int],
-        b: Tuple[str, float, int]
-    ) -> Tuple[str, float, int]:
+    def merge(self, a: Tuple[str, float, int], b: Tuple[str, float, int]) -> Tuple[str, float, int]:
         symbol = a[0] or b[0]
         return symbol, a[1] + b[1], a[2] + b[2]
 
@@ -465,6 +478,9 @@ class SpreadAverageAggregateFunction(AggregateFunction):
 
 
 def main():
+    if not PYFLINK_AVAILABLE:
+        raise ModuleNotFoundError('pyflink is required to run the order book alerts Flink job')
+
     # Initialize Flink execution environment
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/python/datastream_tutorial/
     env = StreamExecutionEnvironment.get_execution_environment()
@@ -487,21 +503,20 @@ def main():
         #
         # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/
         source_builder = (
-            KafkaSource.builder()
-                .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
-                .set_topics(settings.redpanda_topics['metrics'])
-                .set_group_id('flink-alerts-processor')
-                .set_starting_offsets(KafkaOffsetsInitializer.latest())
-                .set_value_only_deserializer(SimpleStringSchema())
-                # .build()
+            KafkaSource.builder().set_bootstrap_servers(
+                settings.redpanda_bootstrap_servers).set_topics(
+                    settings.redpanda_topics['metrics']).set_group_id(
+                        'flink-alerts-processor').set_starting_offsets(
+                            KafkaOffsetsInitializer.latest()).set_value_only_deserializer(
+                                SimpleStringSchema())
+            # .build()
         )
         source = apply_kafka_security(source_builder).build()
 
         # Configure watermark strategy for event time processing
         # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/
         watermark_strategy = WatermarkStrategy.for_bounded_out_of_orderness(
-            Duration.of_seconds(5)
-        ).with_idleness(Duration.of_seconds(10))
+            Duration.of_seconds(5)).with_idleness(Duration.of_seconds(10))
 
         # Build processing pipeline
         # TODO: key the stream by symbol immediately after parsing so all stateful operators (imbalance flip, rate limiter) share the same key scope without an extra keyBy call.
@@ -511,10 +526,7 @@ def main():
                 source=source,
                 watermark_strategy=watermark_strategy,
                 source_name="Redpanda OrderBook Metrics",
-            )
-            .map(parse_metrics)
-            .filter(lambda x: x is not None)
-            .key_by(get_symbol)
+            ).map(parse_metrics).filter(lambda x: x is not None).key_by(get_symbol)
             # .key_by(lambda a: a['symbol'])
         )
 
@@ -524,16 +536,14 @@ def main():
         extreme_imbalance_stream = metrics_stream \
             .map(check_extreme_imbalance) \
             .filter(lambda x: x is not None)
-            
 
         # -----------------------------------------------------------------
         # check_imbalance_flip()  — sign change detection with keyed state
         # -----------------------------------------------------------------
         imbalance_flip_stream = (
-            metrics_stream
-                .process(ImbalanceFlipDetector()) # class in order to extend KeyedProcessFunction
-                .filter(lambda x: x is not None)
-        )
+            metrics_stream.process(
+                ImbalanceFlipDetector())  # class in order to extend KeyedProcessFunction
+            .filter(lambda x: x is not None))
 
         # -----------------------------------------------------------------
         # check_spread_widening()  — spread > N * rolling average
@@ -542,51 +552,44 @@ def main():
         # symbol, then compares the latest value against
         # `settings.spread_alert_multiplier` (default 2.0×).
         windowed = (
-            metrics_stream
-                .window(SlidingEventTimeWindows.of(
-                    Time.minutes(5),   # window size
+            metrics_stream.window(
+                SlidingEventTimeWindows.of(
+                    Time.minutes(5),  # window size
                     Time.seconds(30),  # slide interval
-                ))
-                .aggregate(
-                    SpreadAverageAggregateFunction(),
-                    accumulator_type=Types.TUPLE([Types.STRING(), Types.DOUBLE(), Types.INT()]),
-                    output_type=Types.TUPLE([Types.STRING(), Types.DOUBLE()])
-                )
-        )
+                )).aggregate(SpreadAverageAggregateFunction(),
+                             accumulator_type=Types.TUPLE(
+                                 [Types.STRING(), Types.DOUBLE(),
+                                  Types.INT()]),
+                             output_type=Types.TUPLE([Types.STRING(),
+                                                      Types.DOUBLE()])))
 
         raw_keyed = metrics_stream
         windowed_keyed = windowed.key_by(lambda x: x[0])
 
-        connected = raw_keyed.connect(windowed_keyed) 
+        connected = raw_keyed.connect(windowed_keyed)
 
-        spread_widening_stream = connected.process(SpreadWideningJoinFunction()).filter(lambda x: x is not None)
+        spread_widening_stream = connected.process(
+            SpreadWideningJoinFunction()).filter(lambda x: x is not None)
 
         # -----------------------------------------------------------------
         # check_velocity_spike()  — rate of change exceeds threshold
         # -----------------------------------------------------------------
-        velocity_spike_stream = (
-            metrics_stream
-                .process(VelocitySpikeDetector(window_seconds=settings.rolling_window_seconds))
-                .filter(lambda x: x is not None)
-        )
+        velocity_spike_stream = (metrics_stream.process(
+            VelocitySpikeDetector(
+                window_seconds=settings.rolling_window_seconds)).filter(lambda x: x is not None))
 
         # -----------------------------------------------------------------
         # Rate limiting — deduplicate with keyed state + timer
         # -----------------------------------------------------------------
 
-        all_alerts = extreme_imbalance_stream.union(
-            imbalance_flip_stream,
-            spread_widening_stream,
-            velocity_spike_stream
-        )
+        all_alerts = extreme_imbalance_stream.union(imbalance_flip_stream, spread_widening_stream,
+                                                    velocity_spike_stream)
 
         # remove alerts by symbol+type that occurred in the last minute (key_by partitions the suppression state)
         deduped_alerts = (
-            all_alerts
-                .key_by(lambda a: f"{a.symbol}_{a.alert_type}")
-                # .key_by(lambda a: f"{a['symbol']}_{a['alert_type']}")
-                .process(AlertRateLimiter(cooldown_ms=60_000))
-        )
+            all_alerts.key_by(lambda a: f"{a.symbol}_{a.alert_type}")
+            # .key_by(lambda a: f"{a['symbol']}_{a['alert_type']}")
+            .process(AlertRateLimiter(cooldown_ms=60_000)))
 
         # -----------------------------------------------------------------
         # KafkaSink — orderbook.alerts
@@ -595,25 +598,20 @@ def main():
         #         accepts `Alert` objects directly.
         #         Ref: https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/#kafka-serializationschema
         alerts_sink_builder = (
-            KafkaSink.builder()
-                .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
-                .set_record_serializer(
-                    KafkaRecordSerializationSchema.builder()
-                        .set_topic(settings.redpanda_topics["alerts"])
-                        .set_value_serialization_schema(SimpleStringSchema())
-                        .build()
-                )
-                .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
-                .set_transactional_id_prefix('orderbook-alerts')
-                # .build()
+            KafkaSink.builder().set_bootstrap_servers(
+                settings.redpanda_bootstrap_servers).set_record_serializer(
+                    KafkaRecordSerializationSchema.builder().set_topic(
+                        settings.redpanda_topics["alerts"]).set_value_serialization_schema(
+                            SimpleStringSchema()).build()).set_delivery_guarantee(
+                                DeliveryGuarantee.AT_LEAST_ONCE).set_transactional_id_prefix(
+                                    'orderbook-alerts')
+            # .build()
         )
         alerts_sink = apply_kafka_security(alerts_sink_builder).build()
 
         # Serialize and sink
-        deduped_alerts.map(
-            lambda a: json.dumps(a.to_dict()),
-            output_type=Types.STRING()
-        ).sink_to(alerts_sink)
+        deduped_alerts.map(lambda a: json.dumps(a.to_dict()),
+                           output_type=Types.STRING()).sink_to(alerts_sink)
 
         # Execute
         env.execute("OrderBook Alerts Processor")

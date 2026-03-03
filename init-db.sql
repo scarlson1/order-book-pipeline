@@ -1,5 +1,5 @@
 -- Initialize TimescaleDB extension
-CREATE EXTENSION IF NOT EXISTS timescaledb;
+-- CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- Create main orderbook metrics table
 CREATE TABLE IF NOT EXISTS orderbook_metrics (
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS orderbook_metrics (
 );
 
 -- Convert to hypertable (partitioned by time)
-SELECT create_hypertable('orderbook_metrics', 'time', if_not_exists => TRUE);
+-- SELECT create_hypertable('orderbook_metrics', 'time', if_not_exists => TRUE);
 
 -- Create indexes for fast queries
 CREATE INDEX IF NOT EXISTS idx_orderbook_symbol_time 
@@ -52,7 +52,8 @@ CREATE INDEX IF NOT EXISTS idx_orderbook_imbalance
 
 -- Create alerts table
 CREATE TABLE IF NOT EXISTS orderbook_alerts (
-    id SERIAL PRIMARY KEY,
+    -- id SERIAL PRIMARY KEY,
+    id INT8 PRIMARY KEY DEFAULT unique_rowid(),
     time TIMESTAMPTZ NOT NULL,
     symbol VARCHAR(20) NOT NULL,
     alert_type VARCHAR(50) NOT NULL,
@@ -77,36 +78,124 @@ CREATE INDEX IF NOT EXISTS idx_alerts_type
     ON orderbook_alerts (alert_type, time DESC);
 
 -- Create materialized view for 1-minute aggregates
-CREATE MATERIALIZED VIEW IF NOT EXISTS orderbook_metrics_1m AS
-SELECT
-    time_bucket('1 minute', time) AS bucket,
-    symbol,
+-- CREATE MATERIALIZED VIEW IF NOT EXISTS orderbook_metrics_1m AS
+-- SELECT
+--     time_bucket('1 minute', time) AS bucket,
+--     symbol,
     
-    -- Price statistics
-    FIRST(mid_price, time) as open_price,
-    MAX(mid_price) as high_price,
-    MIN(mid_price) as low_price,
-    LAST(mid_price, time) as close_price,
+--     -- Price statistics
+--     FIRST(mid_price, time) as open_price,
+--     MAX(mid_price) as high_price,
+--     MIN(mid_price) as low_price,
+--     LAST(mid_price, time) as close_price,
     
-    -- Imbalance statistics
-    AVG(weighted_imbalance) as avg_imbalance,
-    STDDEV(weighted_imbalance) as stddev_imbalance,
-    MAX(weighted_imbalance) as max_imbalance,
-    MIN(weighted_imbalance) as min_imbalance,
+--     -- Imbalance statistics
+--     AVG(weighted_imbalance) as avg_imbalance,
+--     STDDEV(weighted_imbalance) as stddev_imbalance,
+--     MAX(weighted_imbalance) as max_imbalance,
+--     MIN(weighted_imbalance) as min_imbalance,
     
-    -- Volume statistics
-    AVG(total_volume) as avg_volume,
-    MAX(total_volume) as max_volume,
+--     -- Volume statistics
+--     AVG(total_volume) as avg_volume,
+--     MAX(total_volume) as max_volume,
     
-    -- Spread statistics
-    AVG(spread_bps) as avg_spread_bps,
-    MAX(spread_bps) as max_spread_bps,
-    MIN(spread_bps) as min_spread_bps,
+--     -- Spread statistics
+--     AVG(spread_bps) as avg_spread_bps,
+--     MAX(spread_bps) as max_spread_bps,
+--     MIN(spread_bps) as min_spread_bps,
     
-    -- Count
-    COUNT(*) as sample_count
-FROM orderbook_metrics
-GROUP BY bucket, symbol;
+--     -- Count
+--     COUNT(*) as sample_count
+-- FROM orderbook_metrics
+-- GROUP BY bucket, symbol;
+
+-- postgres replacement
+-- DROP MATERIALIZED VIEW IF EXISTS orderbook_metrics_1m;
+
+-- CREATE MATERIALIZED VIEW IF NOT EXISTS orderbook_metrics_1m AS
+-- WITH base AS (
+--     SELECT
+--         DATE_TRUNC('minute', time) AS bucket,
+--         symbol,
+--         time,
+--         mid_price,
+--         weighted_imbalance,
+--         total_volume,
+--         spread_bps
+--     FROM orderbook_metrics
+-- ),
+-- ranked AS (
+--     SELECT
+--         bucket,
+--         symbol,
+--         time,
+--         mid_price,
+--         weighted_imbalance,
+--         total_volume,
+--         spread_bps,
+--         ROW_NUMBER() OVER (
+--             PARTITION BY bucket, symbol
+--             ORDER BY time ASC
+--         ) AS rn_open,
+--         ROW_NUMBER() OVER (
+--             PARTITION BY bucket, symbol
+--             ORDER BY time DESC
+--         ) AS rn_close
+--     FROM base
+-- ),
+-- agg AS (
+--     SELECT
+--         bucket,
+--         symbol,
+--         MAX(mid_price) AS high_price,
+--         MIN(mid_price) AS low_price,
+--         AVG(weighted_imbalance) AS avg_imbalance,
+--         STDDEV_SAMP(weighted_imbalance) AS stddev_imbalance,
+--         MAX(weighted_imbalance) AS max_imbalance,
+--         MIN(weighted_imbalance) AS min_imbalance,
+--         AVG(total_volume) AS avg_volume,
+--         MAX(total_volume) AS max_volume,
+--         AVG(spread_bps) AS avg_spread_bps,
+--         MAX(spread_bps) AS max_spread_bps,
+--         MIN(spread_bps) AS min_spread_bps,
+--         COUNT(*) AS sample_count
+--     FROM base
+--     GROUP BY bucket, symbol
+-- ),
+-- open_close AS (
+--     SELECT
+--         bucket,
+--         symbol,
+--         MAX(CASE WHEN rn_open = 1 THEN mid_price END) AS open_price,
+--         MAX(CASE WHEN rn_close = 1 THEN mid_price END) AS close_price
+--     FROM ranked
+--     GROUP BY bucket, symbol
+-- )
+-- SELECT
+--     a.bucket,
+--     a.symbol,
+--     oc.open_price,
+--     a.high_price,
+--     a.low_price,
+--     oc.close_price,
+--     a.avg_imbalance,
+--     a.stddev_imbalance,
+--     a.max_imbalance,
+--     a.min_imbalance,
+--     a.avg_volume,
+--     a.max_volume,
+--     a.avg_spread_bps,
+--     a.max_spread_bps,
+--     a.min_spread_bps,
+--     a.sample_count
+-- FROM agg AS a
+-- JOIN open_close AS oc
+--     ON a.bucket = oc.bucket
+--    AND a.symbol = oc.symbol;
+
+-- postgres replacement
+-- CREATE INDEX IF NOT EXISTS idx_orderbook_metrics_1m_symbol_bucket
+-- ON orderbook_metrics_1m (symbol, bucket DESC);
 
 -- Create continuous aggregate policy (auto-refresh)
 -- This will be set up in application code after first data arrives
@@ -116,85 +205,89 @@ GROUP BY bucket, symbol;
 -- SELECT add_retention_policy('orderbook_metrics', INTERVAL '7 days');
 -- SELECT add_retention_policy('orderbook_alerts', INTERVAL '30 days');
 
--- Create function to calculate statistics for a symbol
-CREATE OR REPLACE FUNCTION get_symbol_statistics(
-    p_symbol VARCHAR(20),
-    p_interval INTERVAL DEFAULT '1 hour'
-)
-RETURNS TABLE (
-    symbol VARCHAR(20),
-    avg_imbalance DOUBLE PRECISION,
-    stddev_imbalance DOUBLE PRECISION,
-    avg_spread_bps DOUBLE PRECISION,
-    avg_volume DOUBLE PRECISION,
-    sample_count BIGINT
-) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT
-        om.symbol,
-        AVG(om.weighted_imbalance)::DOUBLE PRECISION,
-        STDDEV(om.weighted_imbalance)::DOUBLE PRECISION,
-        AVG(om.spread_bps)::DOUBLE PRECISION,
-        AVG(om.total_volume)::DOUBLE PRECISION,
-        COUNT(*)::BIGINT
-    FROM orderbook_metrics om
-    WHERE om.symbol = p_symbol
-        AND om.time >= NOW() - p_interval
-    GROUP BY om.symbol;
-END;
-$$ LANGUAGE plpgsql;
 
--- Create function to get recent alerts
-CREATE OR REPLACE FUNCTION get_recent_alerts(
-    p_limit INTEGER DEFAULT 100,
-    p_symbol VARCHAR(20) DEFAULT NULL
-)
-RETURNS TABLE (
-    id INTEGER,
-    alert_time TIMESTAMPTZ,
-    symbol VARCHAR(20),
-    alert_type VARCHAR(50),
-    severity VARCHAR(20),
-    message TEXT,
-    metric_value DOUBLE PRECISION
-) AS $$
-BEGIN
-    IF p_symbol IS NULL THEN
-        RETURN QUERY
-        SELECT 
-            oa.id,
-            oa.time,
-            oa.symbol,
-            oa.alert_type,
-            oa.severity,
-            oa.message,
-            oa.metric_value
-        FROM orderbook_alerts oa
-        ORDER BY oa.time DESC
-        LIMIT p_limit;
-    ELSE
-        RETURN QUERY
-        SELECT 
-            oa.id,
-            oa.time,
-            oa.symbol,
-            oa.alert_type,
-            oa.severity,
-            oa.message,
-            oa.metric_value
-        FROM orderbook_alerts oa
-        WHERE oa.symbol = p_symbol
-        ORDER BY oa.time DESC
-        LIMIT p_limit;
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
+-- NOT COCKROACH DB COMPATIBLE
+
+-- Create function to calculate statistics for a symbol
+-- CREATE OR REPLACE FUNCTION get_symbol_statistics(
+--     p_symbol VARCHAR(20),
+--     p_interval INTERVAL DEFAULT '1 hour'
+-- )
+-- RETURNS TABLE (
+--     symbol VARCHAR(20),
+--     avg_imbalance DOUBLE PRECISION,
+--     stddev_imbalance DOUBLE PRECISION,
+--     avg_spread_bps DOUBLE PRECISION,
+--     avg_volume DOUBLE PRECISION,
+--     sample_count BIGINT
+-- ) AS $$
+-- BEGIN
+--     RETURN QUERY
+--     SELECT
+--         om.symbol,
+--         AVG(om.weighted_imbalance)::DOUBLE PRECISION,
+--         STDDEV(om.weighted_imbalance)::DOUBLE PRECISION,
+--         AVG(om.spread_bps)::DOUBLE PRECISION,
+--         AVG(om.total_volume)::DOUBLE PRECISION,
+--         COUNT(*)::BIGINT
+--     FROM orderbook_metrics om
+--     WHERE om.symbol = p_symbol
+--         AND om.time >= NOW() - p_interval
+--     GROUP BY om.symbol;
+-- END;
+
+-- $$ LANGUAGE plpgsql;
+
+-- -- Create function to get recent alerts
+-- CREATE OR REPLACE FUNCTION get_recent_alerts(
+--     p_limit INTEGER DEFAULT 100,
+--     p_symbol VARCHAR(20) DEFAULT NULL
+-- )
+-- RETURNS TABLE (
+--     id INTEGER,
+--     alert_time TIMESTAMPTZ,
+--     symbol VARCHAR(20),
+--     alert_type VARCHAR(50),
+--     severity VARCHAR(20),
+--     message TEXT,
+--     metric_value DOUBLE PRECISION
+-- ) AS $$
+-- BEGIN
+--     IF p_symbol IS NULL THEN
+--         RETURN QUERY
+--         SELECT 
+--             oa.id,
+--             oa.time,
+--             oa.symbol,
+--             oa.alert_type,
+--             oa.severity,
+--             oa.message,
+--             oa.metric_value
+--         FROM orderbook_alerts oa
+--         ORDER BY oa.time DESC
+--         LIMIT p_limit;
+--     ELSE
+--         RETURN QUERY
+--         SELECT 
+--             oa.id,
+--             oa.time,
+--             oa.symbol,
+--             oa.alert_type,
+--             oa.severity,
+--             oa.message,
+--             oa.metric_value
+--         FROM orderbook_alerts oa
+--         WHERE oa.symbol = p_symbol
+--         ORDER BY oa.time DESC
+--         LIMIT p_limit;
+--     END IF;
+-- END;
+-- $$ LANGUAGE plpgsql;
 
 -- Grant permissions
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO orderbook_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO orderbook_user;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO orderbook_user;
+-- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO orderbook_user;
+-- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO orderbook_user;
+-- GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO orderbook_user;
 
 -- Insert sample configuration (optional)
 CREATE TABLE IF NOT EXISTS config (
@@ -249,7 +342,7 @@ CREATE TABLE IF NOT EXISTS orderbook_metrics_windowed (
 );
 
 -- Convert to hypertable (partitioned by time)
-SELECT create_hypertable('orderbook_metrics_windowed', 'time', if_not_exists => TRUE);
+-- SELECT create_hypertable('orderbook_metrics_windowed', 'time', if_not_exists => TRUE);
 
 -- Create indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_windowed_symbol_time 
@@ -276,18 +369,19 @@ SELECT DISTINCT ON (symbol, window_type)
 FROM orderbook_metrics_windowed
 ORDER BY symbol, window_type, time DESC;
 
--- Create view for dashboard
-CREATE OR REPLACE VIEW dashboard_summary AS
-SELECT
-    symbol,
-    LAST(mid_price, time) as current_price,
-    LAST(weighted_imbalance, time) as current_imbalance,
-    LAST(spread_bps, time) as current_spread,
-    LAST(total_volume, time) as current_volume,
-    LAST(time, time) as last_update,
-    COUNT(*) as updates_last_hour
-FROM orderbook_metrics
-WHERE time >= NOW() - INTERVAL '1 hour'
-GROUP BY symbol;
+-- -- Create view for dashboard
+-- TIMESCALE SPECIFIC QUERY
+-- CREATE OR REPLACE VIEW dashboard_summary AS
+-- SELECT
+--     symbol,
+--     LAST(mid_price, time) as current_price,
+--     LAST(weighted_imbalance, time) as current_imbalance,
+--     LAST(spread_bps, time) as current_spread,
+--     LAST(total_volume, time) as current_volume,
+--     LAST(time, time) as last_update,
+--     COUNT(*) as updates_last_hour
+-- FROM orderbook_metrics
+-- WHERE time >= NOW() - INTERVAL '1 hour'
+-- GROUP BY symbol;
 
-COMMIT;
+-- COMMIT;

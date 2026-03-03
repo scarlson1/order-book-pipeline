@@ -140,7 +140,7 @@ def _create_depth_figure(
     return fig
 
 @st.fragment()
-def render_orderbook_viz(symbol: str, depth_levels: int = 20, refresh_rate: int = 10000) -> None:
+def render_orderbook_viz(symbol: str, depth_levels: int = 20, refresh_rate: int = 60000) -> None:
     st_autorefresh(interval=refresh_rate, key="data_orderbook_refresh")
 
     snapshot = _get_orderbook_snapshot(symbol)

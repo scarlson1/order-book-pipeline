@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+from dashboard.components.gauge import render_imbalance_gauge
+
 # Add project root to sys.path for Streamlit Cloud compatibility
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -50,20 +52,6 @@ symbol = st.sidebar.selectbox(
     settings.symbol_list
 )
 
-# interval = st.sidebar.selectbox(
-#     'Interval',
-#     ('1m', '5m', '1h', '4h', '1d')
-# )
-# st.sidebar.caption('not currently using interval input')
-
-# refresh at component level
-# refresh_rate = st.sidebar.selectbox(
-#     'Refresh rate',
-#     options=[1000, 2000, 5000, 10000, 30000, 60000],  # milliseconds
-#     format_func=lambda x: f"{x // 1000}s",  # display as "1s", "2s", etc.
-#     index=3
-# )
-
 timezone_pref = st.sidebar.selectbox(
     'Timezone',
     ['America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London', 'UTC'],
@@ -95,7 +83,7 @@ render_metrics_cards(symbol)
 
 # display real-time imbalance chart
 with st.container(border=True):
-    render_timeseries_chart(symbol, hours=1, ) # interval=interval
+    render_timeseries_chart(symbol, hours=1, timezone_pref=timezone_pref)
 
 with st.container(border=True):
     render_orderbook_viz(symbol=symbol, depth_levels=20)
@@ -113,7 +101,9 @@ with col_windowed_stats:
 
 with col_alert_freq:
     # st.bar_chart()
-    st.text('TODO: Alert Frequency')
+    # st.text('TODO: Alert Frequency')
+    st.text('Imbalance Ratio')
+    render_imbalance_gauge(symbol)
 
 
 with st.container(border=True):

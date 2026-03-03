@@ -13,19 +13,32 @@ from dashboard.utils.async_runner import run_async
 # 	data_client = DataLayer()
 # 	return await data_client.get_latest_metrics_with_changes(symbol)
 
-def _format_volume_delta(value: float | None) -> str | None:
-    """Format volume delta with explicit sign."""
+def _to_float(value) -> float | None:
+    """Return float when value is numeric, else None."""
     if value is None:
         return None
-    sign = "+" if value > 0 else ""
-    return f"{sign}{format_volume(value, abbreviated=True)}"
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
-def _format_bps_delta(value: float | None) -> str | None:
-    """Format basis points delta with explicit sign."""
-    if value is None:
+
+def _format_volume_delta(value) -> str | None:
+    """Format volume delta with explicit sign."""
+    numeric_value = _to_float(value)
+    if numeric_value is None:
         return None
-    sign = "+" if value > 0 else ""
-    return f"{sign}{value:.2f} bps"
+    sign = '+' if numeric_value > 0 else ''
+    return f'{sign}{format_volume(numeric_value, abbreviated=True)}'
+
+
+def _format_bps_delta(value) -> str | None:
+    """Format basis points delta with explicit sign."""
+    numeric_value = _to_float(value)
+    if numeric_value is None:
+        return None
+    sign = '+' if numeric_value > 0 else ''
+    return f'{sign}{numeric_value:.2f} bps'
 
 @st.fragment()
 def render_metrics_cards(symbol: str, refresh_rate: int = 1000):
@@ -40,6 +53,8 @@ def render_metrics_cards(symbol: str, refresh_rate: int = 1000):
 	if not result:
 		return st.text('Failed to load metrics')
 
+	# st.write(result)
+
 	col1, col2, col3, col4 = st.columns(4)
 
 	current = result.get('current', {})
@@ -48,6 +63,8 @@ def render_metrics_cards(symbol: str, refresh_rate: int = 1000):
 	bid_volume = current.get('bid_volume', 0)
 	ask_volume = current.get('ask_volume', 0)
 	total_volume= bid_volume + ask_volume
+
+	# st.write(current.get('spread_bps', '--'))
 
 	# Display in Streamlit
 	with col1:

@@ -16,6 +16,6 @@ provider "upstash" {
 }
 
 provider "redpanda" {
-  client_id     = var.redpanda_client_id
-  client_secret = var.redpanda_client_secret
+  client_id     = var.enable_redpanda ? var.redpanda_client_id : "disabled"
+  client_secret = var.enable_redpanda ? var.redpanda_client_secret : "disabled"
 }

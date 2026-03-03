@@ -50,6 +50,10 @@ variable "cockroach_region" {
   type    = string
   default = "us-central1"
 }
+variable "cockroach_delete_protection" {
+  type    = bool
+  default = false
+}
 
 # Upstash
 variable "upstash_email" { type = string }
@@ -63,13 +67,28 @@ variable "upstash_region" {
 }
 
 # Redpanda Cloud
+variable "enable_redpanda" {
+  type    = bool
+  default = true
+}
+
 variable "redpanda_client_id" {
   type      = string
+  default   = ""
   sensitive = true
+  validation {
+    condition     = !var.enable_redpanda || length(trimspace(var.redpanda_client_id)) > 0
+    error_message = "redpanda_client_id must be set when enable_redpanda=true."
+  }
 }
 variable "redpanda_client_secret" {
   type      = string
+  default   = ""
   sensitive = true
+  validation {
+    condition     = !var.enable_redpanda || length(trimspace(var.redpanda_client_secret)) > 0
+    error_message = "redpanda_client_secret must be set when enable_redpanda=true."
+  }
 }
 variable "redpanda_resource_group_name" {
   type    = string
@@ -97,7 +116,12 @@ variable "redpanda_kafka_user" {
 }
 variable "redpanda_kafka_password" {
   type      = string
+  default   = ""
   sensitive = true
+  validation {
+    condition     = !var.enable_redpanda || length(trimspace(var.redpanda_kafka_password)) > 0
+    error_message = "redpanda_kafka_password must be set when enable_redpanda=true."
+  }
 }
 variable "redpanda_topic_prefix" {
   type    = string

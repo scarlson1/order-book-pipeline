@@ -5,16 +5,37 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
-    # TODO: enable workflow tests
-    if: false
+    env:
+      DATABASE_URL: postgresql://root@127.0.0.1:26258/defaultdb?sslmode=disable
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 26258
+      POSTGRES_DB: defaultdb
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: ''
+      POSTGRES_SSLMODE: disable
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      REDIS_SSL: false
+      REDPANDA_TOPIC_PREFIX: orderbook
+      FLINK_HOST: localhost
+      FLINK_PARALLELISM: 1
+      BINANCE_WS_URL: wss://stream.binance.com:9443/ws
+      SYMBOLS: BTCUSDT,ETHUSDT,SOLUSDT
+      UPDATE_SPEED: 100ms
+      LOG_LEVEL: INFO
+      LOG_FILE: /tmp/orderbook.log
+      ENVIRONMENT: development
 
     services:
-      postgres:
-        image: timescale/timescaledb:latest-pg15
-        env:
-          POSTGRES_PASSWORD: test
       redis:
         image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -22,11 +43,47 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v1
 
-      - name: Set up Python
-        run: uv python install 3.11
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Start CockroachDB
+        run: |
+          docker run -d --name cockroachdb \
+            -p 26258:26258 \
+            -p 8080:8080 \
+            cockroachdb/cockroach:latest-v25.2 \
+            start-single-node --insecure --listen-addr=localhost:26257 --sql-addr=0.0.0.0:26258 --http-addr=0.0.0.0:8080 --advertise-addr=localhost:26257 --accept-sql-without-tls
+
+      - name: Wait for CockroachDB
+        run: |
+          for i in {1..30}; do
+            if docker exec cockroachdb cockroach sql --insecure --host=localhost:26258 -e "SELECT 1" >/dev/null 2>&1; then
+              echo 'CockroachDB is ready'
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs cockroachdb
+          exit 1
 
       - name: Install dependencies
-        run: uv pip install -e ".[dev]"
+        run: |
+          uv pip install --system -e .
+          uv pip install --system pytest pytest-asyncio pytest-cov
+
+      - name: Install dbmate
+        run: |
+          curl -fsSL -o /tmp/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64
+          chmod +x /tmp/dbmate
+          sudo mv /tmp/dbmate /usr/local/bin/dbmate
+          dbmate --version
+
+      - name: Apply DB migrations
+        run: |
+          dbmate --migrations-dir db/migrations up
+          dbmate --migrations-dir db/migrations status
 
       - name: Run tests
-        run: pytest
+        run: python -m pytest

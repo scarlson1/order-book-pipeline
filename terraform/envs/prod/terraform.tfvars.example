@@ -13,11 +13,13 @@ cockroach_api_key        = "..."
 cockroach_cluster_name   = "orderbook-crdb"
 cockroach_cloud_provider = "AWS"
 cockroach_region         = "us-east-1"
+cockroach_delete_protection = false
 
 upstash_email   = "you@example.com"
 upstash_api_key = "..."
 upstash_region  = "us-east-1"
 
+enable_redpanda            = true
 redpanda_client_id          = "..."
 redpanda_client_secret      = "..."
 redpanda_resource_group_name = "orderbook-rg"
@@ -30,3 +32,5 @@ redpanda_serverless_region  = "us-east-1"
 redpanda_kafka_user         = "orderbook_app"
 redpanda_kafka_password     = "..."
 redpanda_topic_prefix       = "orderbook"
+
+# Set enable_redpanda=false to skip Redpanda provisioning/reads temporarily.

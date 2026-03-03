@@ -1,4 +1,5 @@
 import asyncio
+from time import monotonic
 from typing import Optional
 from loguru import logger
 
@@ -33,6 +34,7 @@ class RedisConsumer:
     # TTL constants
     METRICS_TTL_SECONDS = 60
     STATISTICS_TTL_SECONDS = 300
+    SNAPSHOT_TTL_SECONDS = 30
     MAX_ALERTS_PER_SYMBOL = 100
 
     def __init__(self):
@@ -54,6 +56,14 @@ class RedisConsumer:
         self._start_task: Optional[asyncio.Task] = None
         self._messages_processed = 0
         self._messages_failed = 0
+        self._snapshot_min_write_interval_seconds = (
+            settings.redis_snapshot_min_write_interval_seconds
+        )
+        self._snapshot_ttl_seconds = max(
+            self.SNAPSHOT_TTL_SECONDS,
+            self._snapshot_min_write_interval_seconds * 2,
+        )
+        self._last_snapshot_write_at: dict[str, float] = {}
 
 
     async def start(self):
@@ -152,16 +162,25 @@ class RedisConsumer:
     async def _handle_cache_metrics(self, msg):
         """Handle messages from the orderbook.metrics topic.
         
-        Message format expected:
+        Message format expected (either nested or flat):
         {
             "symbol": "BTCUSDT",
             "timestamp": "2024-01-01T00:00:00Z",
             "metrics": {...}
         }
+        OR
+        {
+            "symbol": "BTCUSDT",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "mid_price": ...,
+            "imbalance_ratio": ...,
+            ...
+        }
         
         Caches metrics with 60s TTL.
         """
         value = msg.value
+        logger.info('WRITING METRICS FOR {symbol} - 1: {value}')
         if not value:
             logger.warning('Empty message value for metrics')
             return
@@ -171,14 +190,28 @@ class RedisConsumer:
             logger.warning('Message missing "symbol" field')
             return
 
-        metrics = value.get('metrics')
-        if metrics:
-            await self.redis.insert_metrics(
-                symbol=symbol,
-                metrics=metrics,
-                ttl=self.METRICS_TTL_SECONDS
-            )
-            logger.debug(f'Cached metrics for {symbol} (TTL: {self.METRICS_TTL_SECONDS}s)')
+        metrics = value.get('metrics') if isinstance(value.get('metrics'), dict) else value
+        if not isinstance(metrics, dict):
+            logger.warning(f'Invalid metrics payload for {symbol}: expected dict, got {type(metrics)}')
+            return
+
+        metrics_payload = dict(metrics)
+        metrics_payload.setdefault('symbol', symbol)
+
+        # Normalize timestamp naming for dashboard consumers.
+        if 'time' not in metrics_payload and metrics_payload.get('timestamp') is not None:
+            metrics_payload['time'] = metrics_payload['timestamp']
+        if 'timestamp' not in metrics_payload and metrics_payload.get('time') is not None:
+            metrics_payload['timestamp'] = metrics_payload['time']
+
+        logger.info('WRITING METRICS FOR {symbol} - 2')
+
+        await self.redis.insert_metrics(
+            symbol=symbol,
+            metrics=metrics_payload,
+            ttl=self.METRICS_TTL_SECONDS
+        )
+        logger.debug(f'Cached metrics for {symbol} (TTL: {self.METRICS_TTL_SECONDS}s)')
 
     async def _handle_cache_statistics(self, msg):
         """Handle messages from the orderbook.metrics.windowed topic.
@@ -259,11 +292,6 @@ class RedisConsumer:
     async def _handle_cache_snapshot(self, msg):
         value = msg.value
 
-        logger.info(f"RAW TOPIC: Received message for symbol: {value.get('symbol')}")
-        logger.info(f"  keys in message: {value.keys() if value else None}")
-        logger.info(f"  bids count: {len(value.get('bids', [])) if value else 0}")
-        logger.info(f"  asks count: {len(value.get('asks', [])) if value else 0}")
-
         if not value:
             logger.warning('Empty message value for raw snapshot')
             return
@@ -271,7 +299,15 @@ class RedisConsumer:
         # extract snapshot data {bids: [...], asks: [...], timestamp: ...}
         symbol = value.get('symbol')
         if not symbol:
-            logger.warning('Alert message missing "symbol" field')
+            logger.warning('Snapshot message missing "symbol" field')
+            return
+
+        symbol_key = symbol.upper()
+        if not self._should_cache_snapshot(symbol_key):
+            logger.debug(
+                f'Skipped snapshot cache for {symbol_key}; '
+                f'write interval={self._snapshot_min_write_interval_seconds}s'
+            )
             return
 
         snapshot_data = {
@@ -281,12 +317,33 @@ class RedisConsumer:
         }
 
         # save to redis
-        success = await self.redis.cache_orderbook(symbol, snapshot_data, ttl=30)
+        success = await self.redis.cache_orderbook(
+            symbol=symbol_key,
+            orderbook=snapshot_data,
+            ttl=self._snapshot_ttl_seconds,
+        )
 
         if success:
+            self._mark_snapshot_cached(symbol_key)
             logger.debug(f'✓ Cached snapshot for {symbol}')
         else:
             logger.error(f'✗ Failed to cache orderbook snapshot for {symbol}')
+
+    def _should_cache_snapshot(self, symbol: str) -> bool:
+        """Check if enough time has elapsed since last snapshot cache for symbol."""
+        interval_seconds = self._snapshot_min_write_interval_seconds
+        if interval_seconds <= 0:
+            return True
+
+        last_write_at = self._last_snapshot_write_at.get(symbol)
+        if last_write_at is None:
+            return True
+
+        return (monotonic() - last_write_at) >= interval_seconds
+
+    def _mark_snapshot_cached(self, symbol: str) -> None:
+        """Record successful snapshot cache write timestamp for symbol."""
+        self._last_snapshot_write_at[symbol] = monotonic()
 
     def get_stats(self) -> dict:
         """Get consumer statistics."""

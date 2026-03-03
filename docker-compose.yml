@@ -1,26 +1,88 @@
 services:
   # TimescaleDB for time-series storage
-  timescaledb:
-    image: timescale/timescaledb:latest-pg15
-    container_name: orderbook_timescaledb
-    environment:
-      POSTGRES_DB: orderbook
-      POSTGRES_USER: orderbook_user
-      POSTGRES_PASSWORD: orderbook_pass
-      POSTGRES_HOST_AUTH_METHOD: trust
+  # timescaledb:
+  #   image: timescale/timescaledb:latest-pg15
+  #   container_name: orderbook_timescaledb
+  #   environment:
+  #     POSTGRES_DB: orderbook
+  #     POSTGRES_USER: orderbook_user
+  #     POSTGRES_PASSWORD: orderbook_pass
+  #     POSTGRES_HOST_AUTH_METHOD: trust
+  #   ports:
+  #     - '5432:5432'
+  #   extra_hosts:
+  #     - 'host.docker.internal:127.0.0.1' #// Linux
+  #     - 'host.docker.internal:host-gateway' #// Access services on the host machine from within the Docker container
+  #   volumes:
+  #     - timescale_data:/var/lib/postgresql/data
+  #     - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+  #   healthcheck:
+  #     test: ['CMD-SHELL', 'pg_isready -U orderbook_user -d orderbook']
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - orderbook_network
+
+  cockroachdb:
+    image: cockroachdb/cockroach:latest-v25.2
+    container_name: orderbook_cockroachdb
+    # command: start-single-node --insecure --listen-addr=localhost:26257 --sql-addr=0.0.0.0:26257 --http-addr=0.0.0.0:8080 --advertise-addr=cockroachdb --accept-sql-without-tls
+    command: start-single-node --insecure --listen-addr=localhost:26257 --sql-addr=0.0.0.0:26258 --http-addr=0.0.0.0:8080 --advertise-addr=cockroachdb:26258 --accept-sql-without-tls
     ports:
-      - '5432:5432'
+      - '26258:26258'
+      - '8088:8080'
+    env_file:
+      - .env
+    environment:
+      COCKROACH_DATABASE: ${POSTGRES_DB}
+      COCKROACH_USER: ${POSTGRES_USER}
+      COCKROACH_PASSWORD: ${POSTGRES_PASSWORD}
+    # ports:
+    #   - '26257:26257' # connection port
+    #   - '8088:8080' # CockroachDB Admin UI (avoid conflict with Redpanda Console on :8080)
     extra_hosts:
       - 'host.docker.internal:127.0.0.1' #// Linux
       - 'host.docker.internal:host-gateway' #// Access services on the host machine from within the Docker container
     volumes:
-      - timescale_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - cockroach_data:/cockroach/cockroach-data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U orderbook_user -d orderbook']
+      test:
+        [
+          'CMD-SHELL',
+          "cockroach sql --insecure --host=localhost:26258 -e 'SELECT 1' >/dev/null 2>&1 || exit 1",
+        ]
+      #     "cockroach sql --insecure --host=localhost:26257 -e 'SELECT 1' >/dev/null 2>&1 || exit 1",
       interval: 10s
       timeout: 5s
       retries: 5
+    # networks:
+    #   - orderbook_network
+    networks:
+      orderbook_network:
+        aliases:
+          - cockroachdb
+
+  db-migrate:
+    image: amacneil/dbmate:2
+    container_name: orderbook_db_migrate
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./db/migrations:/db/migrations:ro
+    command:
+      - '--migrations-dir'
+      - '/db/migrations'
+      - '--url'
+      - 'postgres://${POSTGRES_USER}@cockroachdb:26258/${POSTGRES_DB}?sslmode=disable'
+      - 'up'
+    #     'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@cockroachdb:26257/${POSTGRES_DB}?sslmode=disable',
+    restart: 'no'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     networks:
       - orderbook_network
 
@@ -124,16 +186,22 @@ services:
       dockerfile: Dockerfile.ingestion
     container_name: orderbook_ingestion
     depends_on:
-      timescaledb:
-        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     env_file:
       - .env
+    environment:
+      POSTGRES_HOST: cockroachdb
+      POSTGRES_PORT: ${POSTGRES_PORT:-26258} # 26257
+      POSTGRES_SSLMODE: disable
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs
     restart: unless-stopped
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     networks:
       - orderbook_network
 
@@ -144,8 +212,8 @@ services:
       dockerfile: Dockerfile.consumers
     container_name: orderbook_consumers
     depends_on:
-      timescaledb:
-        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       redpanda-init:
@@ -153,18 +221,21 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_HOST: timescaledb
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: orderbook
-      POSTGRES_USER: orderbook_user
-      POSTGRES_PASSWORD: orderbook_pass
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDPANDA_BOOTSTRAP_SERVERS: redpanda:9092
+      POSTGRES_HOST: cockroachdb
+      POSTGRES_PORT: ${POSTGRES_PORT:-26258} # 26257
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_SSLMODE: disable
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDPANDA_BOOTSTRAP_SERVERS: ${REDPANDA_BOOTSTRAP_SERVERS:-redpanda:9092}
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs
     restart: unless-stopped
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     networks:
       - orderbook_network
 
@@ -183,7 +254,8 @@ services:
     expose:
       - '6123'
     ports:
-      - '8081:8081' # Flink Web UI
+      # - '8081:8081' # Flink Web UI
+      - '18091:8081'
     extra_hosts:
       - 'host.docker.internal:127.0.0.1' #// Linux
       - 'host.docker.internal:host-gateway' #// Access services on the host machine from within the Docker container
@@ -192,7 +264,7 @@ services:
     environment:
       - POSTGRES_URL=${POSTGRES_URL:-jdbc:postgresql://host.docker.internal:5432/postgres}
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-postgres}
       - PYTHONPATH=/opt:/opt/src
       - |
@@ -289,6 +361,8 @@ services:
     depends_on:
       flink-jobmanager:
         condition: service_healthy
+      flink-taskmanager:
+        condition: service_started
     volumes:
       - ./src:/opt/src
     env_file:
@@ -296,11 +370,16 @@ services:
     environment:
       - FLINK_JOBMANAGER_HOST=flink-jobmanager
       - PYTHONPATH=/opt:/opt/src
+
     entrypoint: >
       bash -lc '
         set -e
         echo "Waiting for Flink JobManager to be ready..."
         until /opt/flink/bin/flink list -m flink-jobmanager:8081 >/dev/null 2>&1; do
+          sleep 2
+        done
+        echo "Waiting for at least one TaskManager..."
+        until curl -sf http://flink-jobmanager:8081/taskmanagers | grep -q "\"id\""; do
           sleep 2
         done
         echo "JobManager ready! Submitting jobs..."
@@ -310,19 +389,6 @@ services:
         echo "All jobs submitted!"
         exit 0
       '
-    # entrypoint: >
-    #   bash -c "
-    #     echo 'Waiting for Flink JobManager to be ready...' &&
-    #     until curl -sf http://flink-jobmanager:8081/overview > /dev/null; do
-    #       sleep 2;
-    #     done &&
-    #     echo 'JobManager ready! Submitting jobs...' &&
-    #     /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d &&
-    #     /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d &&
-    #     /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d &&
-    #     echo 'All jobs submitted!' &&
-    #     tail -f /dev/null
-    #   "
     restart: 'no'
     networks:
       - orderbook_network
@@ -336,14 +402,20 @@ services:
       dockerfile: Dockerfile.dashboard
     container_name: orderbook_dashboard
     depends_on:
-      timescaledb:
-        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     ports:
       - '8501:8501'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     env_file:
       - .env
+    environment:
+      POSTGRES_HOST: cockroachdb
+      POSTGRES_PORT: ${POSTGRES_PORT:-26258} # 26257
+      POSTGRES_SSLMODE: disable
     # environment:
     #   POSTGRES_HOST: timescaledb
     #   POSTGRES_PORT: 5432
@@ -370,7 +442,8 @@ services:
     image: grafana/grafana:10.2.0
     container_name: orderbook_grafana
     depends_on:
-      - timescaledb
+      db-migrate:
+        condition: service_completed_successfully
     ports:
       - '3000:3000'
     env_file:
@@ -411,7 +484,8 @@ networks:
     driver: bridge
 
 volumes:
-  timescale_data:
+  # timescale_data:
+  cockroach_data:
   redis_data:
   redpanda_data:
   flink_checkpoints:

@@ -65,9 +65,7 @@ def render_imbalance_trend(symbol: str, timezone_pref: str = 'America/New_York',
     st_autorefresh(interval=refresh_rate, key="data_imbalance_refresh")
 
     rows = _get_imb_trend_data(symbol)
-    print(f"DEBUG: {len(rows) if rows else 0} rows of windowed data")
-    
-
+    # print(f"DEBUG: {len(rows) if rows else 0} rows of windowed data")
     
     df = pd.DataFrame(rows)
     # convert UTC to specified timezone

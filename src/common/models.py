@@ -1,5 +1,5 @@
 """Pydantic data models."""
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import AliasChoices, BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Tuple, Optional
 from datetime import datetime
 from enum import Enum
@@ -252,6 +252,90 @@ class OrderBookMetrics(BaseModel):
     def validate_symbol(cls, v: str) -> str:
         """Ensure symbol is uppercase."""
         return v.strip().upper()
+
+
+class OrderBookWindowedMetrics(BaseModel):
+    """Windowed aggregate metrics stored in orderbook_metrics_windowed."""
+
+    time: Optional[datetime] = Field(
+        None, description='Window record timestamp (defaults to window_end)')
+    symbol: str = Field(..., min_length=1, description='Trading symbol')
+    window_type: str = Field(..., min_length=1, description='Window type')
+    window_start: datetime = Field(..., description='Window start timestamp')
+    window_end: datetime = Field(..., description='Window end timestamp')
+    window_duration_seconds: Optional[int] = Field(
+        None,
+        ge=1,
+        description='Window duration in seconds',
+        validation_alias=AliasChoices('window_duration_seconds', 'window_duration'))
+
+    avg_mid_price: Optional[float] = Field(None, gt=0)
+    avg_imbalance: Optional[float] = Field(None, ge=-1.0, le=1.0)
+    min_imbalance: Optional[float] = Field(None, ge=-1.0, le=1.0)
+    max_imbalance: Optional[float] = Field(None, ge=-1.0, le=1.0)
+    avg_spread_bps: Optional[float] = Field(None, ge=0)
+    min_spread_bps: Optional[float] = Field(None, ge=0)
+    max_spread_bps: Optional[float] = Field(None, ge=0)
+
+    avg_bid_volume: Optional[float] = Field(None, ge=0)
+    avg_ask_volume: Optional[float] = Field(None, ge=0)
+    avg_total_volume: Optional[float] = Field(None, ge=0)
+    total_bid_volume: Optional[float] = Field(None, ge=0)
+    total_ask_volume: Optional[float] = Field(None, ge=0)
+    total_volume: Optional[float] = Field(None, ge=0)
+
+    sample_count: int = Field(..., ge=0)
+    window_velocity: Optional[float] = Field(None)
+
+    model_config = ConfigDict(
+        validate_assignment=True,
+        json_schema_extra={
+            'example': {
+                'time': '2024-01-01T12:05:00Z',
+                'symbol': 'BTCUSDT',
+                'window_type': '5m_sliding',
+                'window_start': '2024-01-01T12:00:00Z',
+                'window_end': '2024-01-01T12:05:00Z',
+                'window_duration_seconds': 300,
+                'avg_imbalance': 0.12,
+                'avg_spread_bps': 2.1,
+                'avg_total_volume': 1524.0,
+                'sample_count': 60
+            }
+        })
+
+    @field_validator('symbol')
+    @classmethod
+    def validate_symbol(cls, v: str) -> str:
+        """Ensure symbol is uppercase."""
+        return v.strip().upper()
+
+    @field_validator('window_type')
+    @classmethod
+    def validate_window_type(cls, v: str) -> str:
+        """Ensure window type is not empty/whitespace."""
+        window_type = v.strip()
+        if not window_type:
+            raise ValueError('window_type cannot be empty')
+        return window_type
+
+    @model_validator(mode='after')
+    def validate_window_bounds(self):
+        """Ensure window bounds are valid and time is populated."""
+        if self.window_end < self.window_start:
+            raise ValueError('window_end must be greater than or equal to window_start')
+        if self.window_duration_seconds is None:
+            duration_seconds = int((self.window_end - self.window_start).total_seconds())
+            if duration_seconds <= 0:
+                raise ValueError('window_duration_seconds must be greater than 0')
+            self.window_duration_seconds = duration_seconds
+        if self.time is None:
+            self.time = self.window_end
+        return self
+
+    def to_dict(self) -> dict:
+        """Serialize for transport/storage."""
+        return self.model_dump(mode='json')
 
 # ===== Alert Models =====
 

@@ -21,7 +21,7 @@ def render_status_indicators(refresh_rate: int = 10000):
     statuses = {
         "Redpanda": redpanda_healthy,
         "Flink": flink_healthy,
-        "PostgreSQL": db_healthy,
+        "CockroachDB": db_healthy,
         "Redis": redis_healthy,
     }
 

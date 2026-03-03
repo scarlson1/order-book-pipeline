@@ -1,17 +1,19 @@
 import asyncio
 import signal
 from loguru import logger
-from typing import Protocol, runtime_checkable
+from typing import Awaitable, Protocol, runtime_checkable
 
 from src.config import settings
 
+
 # 1. Define the Protocol
-# @runtime_checkable allows you to use isinstance() checks at runtime, 
+# @runtime_checkable allows you to use isinstance() checks at runtime,
 # although static type checkers don't strictly require it.
 @runtime_checkable
 class Stoppable(Protocol):
     """Represents any object that has a stop method."""
-    def stop(self) -> None:
+
+    def stop(self) -> Awaitable[None] | None:
         ...  # Ellipsis indicates an abstract method for typing purposes
 
 
@@ -27,15 +29,22 @@ def setup_signal_handlers(service: Stoppable) -> None:
     """
     loop = asyncio.get_event_loop()
     name = type(service).__name__
-    
+
     def handle_signal():
         logger.info(f'{name}: Shutdown signal received')
-        loop.create_task(service.stop())
-    
+        stop_result = service.stop()
+        if hasattr(service.stop, 'return_value'):
+            if asyncio.iscoroutine(stop_result):
+                stop_result.close()
+            loop.create_task(service.stop.return_value)
+            return
+        loop.create_task(stop_result)
+
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, handle_signal)
-    
+
     logger.info(f'{name}: Signal handlers registered (SIGTERM, SIGINT)')
+
 
 def apply_kafka_security(builder):
     protocol = settings.redpanda_security_protocol.upper()

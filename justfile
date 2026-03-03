@@ -3,6 +3,8 @@
 # Usage: just <command>
 # List all commands: just --list
 
+migrations_dir := env_var_or_default('MIGRATIONS_DIR', 'db/migrations')
+
 # Default recipe (runs when you type 'just')
 default:
     @just --list
@@ -13,97 +15,123 @@ alias d := down
 
 # Start all services
 up:
-    docker-compose up -d
+    docker compose up -d
     @echo "Services started! Dashboard: http://localhost:8501"
 
 # Stop all services
 down:
-    docker-compose down
+    docker compose down
 
 # Restart all services
 restart:
-    docker-compose restart
+    docker compose restart
 
 # View logs
 logs:
-    docker-compose logs -f
+    docker compose logs -f
 
 # View logs for specific service
 logs-service SERVICE:
-    docker-compose logs -f {{SERVICE}}
+    docker compose logs -f {{SERVICE}}
 
 # Build all services
 build:
-    docker-compose build
+    docker compose build
 
 # Rebuild and start
 rebuild: build up
 
 # Clean everything (including volumes)
 clean:
-    docker-compose down -v
+    docker compose down -v
     @echo "All containers and volumes removed"
 
 # Start with profiles
 up-kafka:
-    docker-compose --profile with-kafka up -d
+    docker compose --profile with-kafka up -d
 
 up-grafana:
-    docker-compose --profile with-grafana up -d
+    docker compose --profile with-grafana up -d
 
 up-pgadmin:
-    docker-compose --profile with-pgadmin up -d
+    docker compose --profile with-pgadmin up -d
 
 up-all:
-    docker-compose --profile with-kafka --profile with-grafana --profile with-pgadmin up -d
+    docker compose --profile with-kafka --profile with-grafana --profile with-pgadmin up -d
 
 # Database commands
 db-shell:
-    docker-compose exec timescaledb psql -U orderbook_user -d orderbook
+    @test -n "$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+    psql "$DATABASE_URL"
+
+# Migrations
+db-migrate: db-migrate-up
+
+db-migrate-up:
+    @test -n "$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+    dbmate --migrations-dir {{migrations_dir}} up
+
+db-migrate-status:
+    @test -n "$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+    dbmate --migrations-dir {{migrations_dir}} status
+
+db-migrate-down:
+    @test -n "$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+    dbmate --migrations-dir {{migrations_dir}} down
+
+db-migrate-new NAME:
+    dbmate --migrations-dir {{migrations_dir}} new {{NAME}}
 
 redis-shell:
-    docker-compose exec redis redis-cli
+    docker compose exec redis redis-cli
 
 # Check status
 status:
-    docker-compose ps
+    docker compose ps
 
 stats:
     docker stats
 
 # Database utilities
 db-size:
-    docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "SELECT pg_size_pretty(pg_database_size('orderbook'));"
+    @test -n "$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+    psql "$DATABASE_URL" -c "SELECT pg_size_pretty(pg_database_size(current_database()));"
 
 table-sizes:
-    docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "SELECT schemaname, tablename, pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size FROM pg_tables WHERE schemaname = 'public' ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;"
+    @test -n "$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+    psql "$DATABASE_URL" -c "SELECT schemaname, tablename, pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size FROM pg_tables WHERE schemaname = 'public' ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;"
 
 # View recent data
 recent-metrics:
-    docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "SELECT * FROM orderbook_metrics ORDER BY time DESC LIMIT 10;"
+    @test -n "$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+    psql "$DATABASE_URL" -c "SELECT * FROM orderbook_metrics ORDER BY time DESC LIMIT 10;"
 
 recent-alerts:
-    docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "SELECT * FROM orderbook_alerts ORDER BY time DESC LIMIT 10;"
+    @test -n "$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+    psql "$DATABASE_URL" -c "SELECT * FROM orderbook_alerts ORDER BY time DESC LIMIT 10;"
 
 dashboard-summary:
-    docker-compose exec timescaledb psql -U orderbook_user -d orderbook -c "SELECT * FROM dashboard_summary;"
+    @test -n "$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+    psql "$DATABASE_URL" -c "SELECT * FROM latest_windowed_metrics ORDER BY time DESC LIMIT 20;"
 
 # Redis utilities
 redis-keys:
-    docker-compose exec redis redis-cli KEYS "*"
+    docker compose exec redis redis-cli KEYS "*"
 
 redis-btc:
-    docker-compose exec redis redis-cli GET "orderbook:BTCUSDT:latest"
+    docker compose exec redis redis-cli GET "orderbook:BTCUSDT:latest"
 
 # Backup and restore
 backup:
     #!/usr/bin/env bash
+    test -n "$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    docker-compose exec timescaledb pg_dump -U orderbook_user orderbook > backup_${TIMESTAMP}.sql
+    pg_dump "$DATABASE_URL" > backup_${TIMESTAMP}.sql
     echo "Database backed up to backup_${TIMESTAMP}.sql"
 
 restore BACKUP:
-    docker-compose exec -T timescaledb psql -U orderbook_user orderbook < {{BACKUP}}
+    @test -n "$DATABASE_URL" || (echo "DATABASE_URL is required"; exit 1)
+    psql "$DATABASE_URL" < {{BACKUP}}
 
 # Local development with uv
 uv-install:
@@ -121,7 +149,7 @@ uv-sync:
 
 # Code quality
 format:
-    black src/ dashboard/ tests/
+    yapf -r -i src/ dashboard/ tests/
     ruff check --fix src/ dashboard/ tests/
 
 lint:

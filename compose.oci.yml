@@ -9,10 +9,24 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
 
+  db-migrate:
+    image: amacneil/dbmate:2
+    env_file:
+      - .env.oci
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    volumes:
+      - ./db/migrations:/db/migrations:ro
+    command: ['--migrations-dir', '/db/migrations', 'up']
+    restart: 'no'
+
   consumers:
     build:
       context: .
       dockerfile: Dockerfile.consumers
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
     env_file:
       - .env.oci
     volumes:

@@ -91,7 +91,7 @@ orderbook-monitor/
 
 **docker-compose.yml**
 
-- Defines all services (TimescaleDB, Redis, Kafka, Ingestion, Dashboard, Grafana)
+- Defines all services (CockroachDB, Redis, Kafka, Ingestion, Dashboard, Grafana)
 - Sets up networking between containers
 - Manages volumes for data persistence
 - Health checks and dependencies
@@ -120,10 +120,9 @@ orderbook-monitor/
 - Configuration parameters
 - Alert thresholds
 
-**init-db.sql**
+**db/migrations**
 
 - Database schema (tables, indexes)
-- TimescaleDB hypertables
 - Materialized views
 - Retention policies
 - Helper functions
@@ -293,57 +292,9 @@ orderbook-monitor/
 # Handle cache misses
 ```
 
-## Implementation Order
-
-### Phase 1: Core Infrastructure (Day 1)
-
-1. Set up Docker services ✅ (DONE)
-2. Initialize database schema ✅ (DONE)
-3. Test connections
-
-### Phase 2: Data Models & Config (Day 1)
-
-1. `src/common/models.py` - Define Pydantic models
-2. `src/config.py` - Configuration loader
-3. `src/common/database.py` - Database client
-4. `src/common/redis_client.py` - Redis client
-
-### Phase 3: WebSocket Ingestion (Day 2-3)
-
-1. `src/ingestion/websocket_client.py` - WebSocket connection
-2. `src/ingestion/orderbook_parser.py` - Parse order book
-3. `src/ingestion/metrics_calculator.py` - Calculate metrics
-4. `src/ingestion/data_writer.py` - Write to storage
-5. `src/ingestion/main.py` - Tie it all together
-
-### Phase 4: Alert Engine (Day 3)
-
-1. `src/ingestion/alert_engine.py` - Alert logic
-2. Test alert generation
-
-### Phase 5: Basic Dashboard (Day 4-5)
-
-1. `dashboard/data/db_queries.py` - Database queries
-2. `dashboard/data/redis_cache.py` - Redis queries
-3. `dashboard/components/metrics_cards.py` - Simple metrics
-4. `dashboard/app.py` - Basic layout
-
-### Phase 6: Advanced Visualizations (Day 6-7)
-
-1. `dashboard/components/gauge.py` - Imbalance gauge
-2. `dashboard/components/timeseries.py` - Charts
-3. `dashboard/components/orderbook_viz.py` - Order book viz
-4. `dashboard/components/alert_feed.py` - Alert feed
-
-### Phase 7: Polish & Testing (Day 8-10)
-
-1. Write tests
-2. Performance optimization
-3. Error handling
-4. Documentation
-5. Grafana dashboards
-
 ## Environment Variables Reference
+
+TODO: update env vars reference
 
 ```bash
 # Database
@@ -376,41 +327,3 @@ ROLLING_WINDOW_SECONDS=60
 LOG_LEVEL=INFO
 LOG_FILE=/app/logs/orderbook.log
 ```
-
-## Key Decisions & Rationale
-
-1. **TimescaleDB over vanilla PostgreSQL**
-   - Optimized for time-series data
-   - Automatic partitioning
-   - Continuous aggregates
-   - Better compression
-
-2. **Redis for caching**
-   - Sub-millisecond latency
-   - Dashboard needs latest data quickly
-   - Reduces database load
-
-3. **Kafka as optional**
-   - Not needed for MVP
-   - Useful for production scale-out
-   - Multiple consumers pattern
-
-4. **Streamlit for dashboard**
-   - Fastest time to value
-   - Good enough for portfolio
-   - Can migrate to React later
-
-5. **Docker Compose**
-   - Easy local development
-   - Reproducible environments
-   - Single command deployment
-
-## Next Steps
-
-1. Review this structure
-2. Run `./setup.sh` to initialize
-3. Start implementing Phase 2 (Data Models)
-4. Test each phase before moving forward
-5. Build incrementally
-
-The infrastructure is ready - now it's time to write the application logic!

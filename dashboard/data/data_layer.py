@@ -40,8 +40,8 @@ class DataLayer:
         logger.info(f"Cache miss for {symbol}, querying database")
         db_result = await self.db.fetch_latest_metrics(symbol)
         
-        if db_result:
-            await self.redis.redis.insert_metrics(symbol, db_result, ttl=60)
+        # if db_result:
+        #     await self.redis.redis.insert_metrics(symbol, db_result, ttl=2)
         
         return db_result
 

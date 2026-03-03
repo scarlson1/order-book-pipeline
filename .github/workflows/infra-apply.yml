@@ -1,45 +1,14 @@
-name: Infra Apply
+name: Infra Apply (Disabled)
 
 on:
   workflow_dispatch:
 
 jobs:
-  apply:
+  disabled:
     runs-on: ubuntu-latest
-    env:
-      TF_VAR_oci_tenancy_ocid: ${{ secrets.TF_VAR_OCI_TENANCY_OCID }}
-      TF_VAR_oci_user_ocid: ${{ secrets.TF_VAR_OCI_USER_OCID }}
-      TF_VAR_oci_fingerprint: ${{ secrets.TF_VAR_OCI_FINGERPRINT }}
-      TF_VAR_oci_region: ${{ secrets.TF_VAR_OCI_REGION }}
-      TF_VAR_oci_compartment_ocid: ${{ secrets.TF_VAR_OCI_COMPARTMENT_OCID }}
-      TF_VAR_oci_admin_cidr: ${{ secrets.TF_VAR_OCI_ADMIN_CIDR }}
-      TF_VAR_oci_ssh_public_key: ${{ secrets.TF_VAR_OCI_SSH_PUBLIC_KEY }}
-      TF_VAR_cockroach_api_key: ${{ secrets.TF_VAR_COCKROACH_API_KEY }}
-      TF_VAR_upstash_email: ${{ secrets.TF_VAR_UPSTASH_EMAIL }}
-      TF_VAR_upstash_api_key: ${{ secrets.TF_VAR_UPSTASH_API_KEY }}
-      TF_VAR_redpanda_client_id: ${{ secrets.TF_VAR_REDPANDA_CLIENT_ID }}
-      TF_VAR_redpanda_client_secret: ${{ secrets.TF_VAR_REDPANDA_CLIENT_SECRET }}
-      TF_VAR_redpanda_kafka_password: ${{ secrets.TF_VAR_REDPANDA_KAFKA_PASSWORD }}
-    defaults:
-      run:
-        working-directory: terraform/envs/prod
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-
-      - name: Write OCI API Private Key
+      - name: Disabled Workflow
         run: |
-          set -euo pipefail
-          key_path="$RUNNER_TEMP/oci_api_key.pem"
-          printf '%s' '${{ secrets.OCI_API_PRIVATE_KEY_PEM }}' > "$key_path"
-          chmod 600 "$key_path"
-          echo "TF_VAR_oci_private_key_path=$key_path" >> "$GITHUB_ENV"
-
-      - name: Terraform Init
-        run: terraform init
-
-      - name: Terraform Plan
-        run: terraform plan -out=tfplan
-
-      - name: Terraform Apply
-        run: terraform apply -auto-approve tfplan
+          echo 'This workflow is disabled.'
+          echo 'Use .github/workflows/infra-apply-oci.yml instead.'
+          exit 1

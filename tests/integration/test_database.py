@@ -1,14 +1,46 @@
 """Integration tests for src/common/database.py.
 
-Requires a running PostgreSQL/TimescaleDB instance with schema from init-db.sql.
-Skip when database is unavailable (e.g. CI without services).
+Requires a running PostgreSQL/CockroachDB instance with schema applied
+from dbmate migrations in db/migrations/.
+Skips when database is unavailable (e.g. CI without services).
 """
 from datetime import datetime, timezone, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from src.common.database import DatabaseClient
+
+
+class FakePostgresError(Exception):
+    """Test double for asyncpg.PostgresError with sqlstate support."""
+
+    def __init__(self, message: str, sqlstate: str | None = None):
+        super().__init__(message)
+        self.sqlstate = sqlstate
+
+
+class _AcquireContext:
+    """Async context manager returned by fake pool.acquire()."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakePool:
+    """Minimal pool double that supports acquire()."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def acquire(self):
+        return _AcquireContext(self._conn)
 
 
 # ----- Fixtures ----- #
@@ -187,6 +219,27 @@ async def test_get_statistics(connected_db, sample_metrics):
 
 
 @pytest.mark.integration
+async def test_migration_managed_schema_has_expected_tables(connected_db):
+    """Core tables exist via migration-managed schema bootstrap."""
+    async with connected_db.pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name IN (
+                'orderbook_metrics',
+                'orderbook_alerts',
+                'orderbook_metrics_windowed'
+              )
+        """)
+
+    table_names = {row["table_name"] for row in rows}
+    assert "orderbook_metrics" in table_names
+    assert "orderbook_alerts" in table_names
+    assert "orderbook_metrics_windowed" in table_names
+
+
+@pytest.mark.integration
 async def test_get_pool_stats_when_connected(connected_db):
     """get_pool_stats returns size/free/max_size/min_size when connected."""
     stats = await connected_db.get_pool_stats()
@@ -228,6 +281,60 @@ async def test_concurrent_acquires_use_pool(connected_db):
 
 
 # ----- Error handling ----- #
+
+
+@pytest.mark.integration
+async def test_write_chunk_with_executemany_retries_on_40001(db_client):
+    """Retryable Cockroach 40001 errors are retried before succeeding."""
+    conn = AsyncMock()
+    conn.executemany = AsyncMock(side_effect=[
+        FakePostgresError("serialization failure", sqlstate="40001"),
+        None,
+    ])
+
+    db_client.pool = _FakePool(conn)
+    db_client.max_write_retries = 3
+    db_client.retry_base_delay_seconds = 0.01
+
+    with (patch("src.common.database.asyncpg.PostgresError",
+                FakePostgresError), patch("src.common.database.asyncio.sleep", new=AsyncMock()) as
+          sleep_mock):
+        await db_client._write_chunk_with_executemany(table_name="orderbook_metrics",
+                                                      columns=["time", "symbol", "mid_price"],
+                                                      records_chunk=[(datetime.now(timezone.utc),
+                                                                      "BTCUSDT", 50000.0)])
+
+    assert conn.executemany.await_count == 2
+    sleep_mock.assert_awaited_once_with(0.01)
+
+
+@pytest.mark.integration
+async def test_write_chunk_with_executemany_raises_after_retry_budget(db_client):
+    """Retry loop raises once max_write_retries is exhausted."""
+    conn = AsyncMock()
+    conn.executemany = AsyncMock(side_effect=[
+        FakePostgresError("serialization failure", sqlstate="40001"),
+        FakePostgresError("serialization failure", sqlstate="40001"),
+        FakePostgresError("serialization failure", sqlstate="40001"),
+    ])
+
+    db_client.pool = _FakePool(conn)
+    db_client.max_write_retries = 3
+    db_client.retry_base_delay_seconds = 0.01
+
+    with (patch("src.common.database.asyncpg.PostgresError",
+                FakePostgresError), patch("src.common.database.asyncio.sleep", new=AsyncMock()) as
+          sleep_mock):
+        with pytest.raises(FakePostgresError):
+            await db_client._write_chunk_with_executemany(table_name="orderbook_metrics",
+                                                          columns=["time", "symbol", "mid_price"],
+                                                          records_chunk=[
+                                                              (datetime.now(timezone.utc),
+                                                               "BTCUSDT", 50000.0)
+                                                          ])
+
+    assert conn.executemany.await_count == 3
+    assert sleep_mock.await_count == 2
 
 
 @pytest.mark.integration
