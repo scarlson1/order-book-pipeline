@@ -77,6 +77,7 @@ def _create_multi_metric_windows(df, symbol: str, timezone_pref: str):
 
 @st.fragment()
 def render_multi_metric_windows(symbol: str, timezone_pref: str = 'America/New_York', refresh_rate: int = 30000):
+    
     st_autorefresh(interval=refresh_rate, key="data_multi_windowed_metrics_refresh")
     rows = _get_windowed_data(symbol)
 
