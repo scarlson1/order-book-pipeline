@@ -8,6 +8,7 @@ from datetime import datetime
 import asyncpg
 from loguru import logger
 
+from src.common.models import OrderBookWindowedMetrics
 from src.config import settings
 
 
@@ -247,38 +248,46 @@ class DatabaseClient:
 
     # ====== WINDOWED METRICS METHODS ====== #
 
-    async def insert_batch_windowed_metrics(self, windowed_list: List[Dict]) -> None:
+    async def insert_batch_windowed_metrics(
+        self,
+        windowed_list: list[OrderBookWindowedMetrics | Dict],
+    ) -> None:
         """Insert batch of windowed metrics efficiently.
         
         Args:
-            windowed_list: List of windowed metric dictionaries
+            windowed_list: List of windowed metric payloads
         """
         if not windowed_list:
             return
 
+        validated_windowed = [
+            item if isinstance(item, OrderBookWindowedMetrics) else
+            OrderBookWindowedMetrics.model_validate(item) for item in windowed_list
+        ]
+
         records = [
             (
-                w['window_end'],  # time column
-                w['symbol'],
-                w['window_type'],
-                w['window_start'],
-                w['window_end'],
-                w['window_duration_seconds'],
-                w.get('avg_mid_price'),
-                w.get('avg_imbalance'),
-                w.get('min_imbalance'),
-                w.get('max_imbalance'),
-                w.get('avg_spread_bps'),
-                w.get('min_spread_bps'),
-                w.get('max_spread_bps'),
-                w.get('avg_bid_volume'),
-                w.get('avg_ask_volume'),
-                w.get('avg_total_volume'),
-                w.get('total_bid_volume'),
-                w.get('total_ask_volume'),
-                w.get('total_volume'),
-                w['sample_count'],
-                w.get('window_velocity')) for w in windowed_list
+                w.time or w.window_end,  # time column
+                w.symbol,
+                w.window_type,
+                w.window_start,
+                w.window_end,
+                w.window_duration_seconds,
+                w.avg_mid_price,
+                w.avg_imbalance,
+                w.min_imbalance,
+                w.max_imbalance,
+                w.avg_spread_bps,
+                w.min_spread_bps,
+                w.max_spread_bps,
+                w.avg_bid_volume,
+                w.avg_ask_volume,
+                w.avg_total_volume,
+                w.total_bid_volume,
+                w.total_ask_volume,
+                w.total_volume,
+                w.sample_count,
+                w.window_velocity) for w in validated_windowed
         ]
 
         columns = [
@@ -293,7 +302,7 @@ class DatabaseClient:
                                         columns=columns,
                                         records=records)
 
-        logger.debug(f"Inserted batch of {len(windowed_list)} windowed metrics")
+        logger.debug(f"Inserted batch of {len(validated_windowed)} windowed metrics")
 
     async def fetch_latest_windowed_metrics(self,
                                             symbol: str,
@@ -319,8 +328,10 @@ class DatabaseClient:
                 ORDER BY time DESC
                 LIMIT 1
             """, symbol, window_type)
-
-            return dict(row) if row else None
+            if not row:
+                return None
+            validated = OrderBookWindowedMetrics.model_validate(dict(row))
+            return validated.model_dump(mode='python')
 
     # ===== STATS METHODS ===== #
 

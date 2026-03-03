@@ -18,7 +18,7 @@ from pyflink.datastream.window import SlidingEventTimeWindows, TumblingProcessin
 from pyflink.datastream.functions import AggregateFunction
 
 from src.common.utils import apply_kafka_security
-from src.common.models import OrderBookMetrics
+from src.common.models import OrderBookMetrics, OrderBookWindowedMetrics
 from src.config import settings
 from src.jobs.orderbook_alerts import parse_metrics
 
@@ -107,44 +107,35 @@ class WindowAggFunction(AggregateFunction):
 
     def get_result(self, acc: dict) -> dict:
         count = acc['sample_count']
-        if count == 0:
-            return {
-                'symbol': acc['symbol'],
-                'window_type': self.window_type,
-                'window_start': None,
-                'window_end': None,
-                'window_duration_seconds': self.window_duration_seconds,
-                'sample_count': 0,
-            }
-
         window_end = datetime.now(timezone.utc)
         window_start = window_end - timedelta(seconds=self.window_duration_seconds)
 
         # TODO(cockroach-cutover): include OHLC + stddev fields in this output
         # once they are computed in the accumulator and update DB schema
         # (orderbook_metrics_windowed) and consumers accordingly.
-        return {
+        payload = {
             'symbol': acc['symbol'],
             'window_type': self.window_type,
             'window_start': window_start.isoformat(),
             'window_end': window_end.isoformat(),
             'window_duration_seconds': self.window_duration_seconds,
-            'avg_mid_price': acc['mid_price_total'] / count,
-            'avg_imbalance': acc['imb_total'] / count,
+            'avg_mid_price': (acc['mid_price_total'] / count) if count else None,
+            'avg_imbalance': (acc['imb_total'] / count) if count else None,
             'min_imbalance': acc['imb_min'],
             'max_imbalance': acc['imb_max'],
-            'avg_spread_bps': acc['spread_bps_total'] / count,
+            'avg_spread_bps': (acc['spread_bps_total'] / count) if count else None,
             'min_spread_bps': acc['spread_bps_min'],
             'max_spread_bps': acc['spread_bps_max'],
-            'avg_bid_volume': acc['bid_volume_total'] / count,
-            'avg_ask_volume': acc['ask_volume_total'] / count,
-            'avg_total_volume': acc['total_volume_total'] / count,
+            'avg_bid_volume': (acc['bid_volume_total'] / count) if count else None,
+            'avg_ask_volume': (acc['ask_volume_total'] / count) if count else None,
+            'avg_total_volume': (acc['total_volume_total'] / count) if count else None,
             'total_bid_volume': acc['bid_volume_total'],
             'total_ask_volume': acc['ask_volume_total'],
             'total_volume': acc['total_volume_total'],
             'sample_count': count,
             'window_velocity': None,
         }
+        return OrderBookWindowedMetrics.model_validate(payload).model_dump(mode='json')
 
     def merge(self, a: dict, b: dict) -> dict:
         return {

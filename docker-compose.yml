@@ -24,68 +24,6 @@ services:
   #   networks:
   #     - orderbook_network
 
-  # cockroachdb:
-  #   image: cockroachdb/cockroach:latest-v25.2
-  #   container_name: orderbook_cockroachdb
-  #   command:
-  #     - start-single-node
-  #     - --insecure
-  #     - --listen-addr=127.0.0.1:26257
-  #     - --http-addr=127.0.0.1:8080
-  #   ports:
-  #     - '26257:26257'
-  #     - '8088:8080'
-  #   volumes:
-  #     - cockroach_data:/cockroach/cockroach-data
-  #   healthcheck:
-  #     test:
-  #       [
-  #         'CMD-SHELL',
-  #         "timeout 5 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/26257' || exit 1",
-  #       ]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #     start_period: 15s
-  #   networks:
-  #     - orderbook_network
-
-  # # Socat proxy to make CockroachDB accessible from other containers
-  # cockroachdb-proxy:
-  #   image: alpine/socat:latest
-  #   container_name: orderbook_cockroachdb_proxy
-  #   depends_on:
-  #     cockroachdb:
-  #       condition: service_healthy
-  #   command: TCP-LISTEN:26257,reuseaddr,fork TCP:cockroachdb:26257
-  #   expose:
-  #     - '26257'
-  #   networks:
-  #     - orderbook_network
-  #   restart: unless-stopped
-
-  # db-migrate:
-  #   image: amacneil/dbmate:2
-  #   container_name: orderbook_db_migrate
-  #   depends_on:
-  #     cockroachdb-proxy:
-  #       condition: service_started
-  #   env_file:
-  #     - .env
-  #   volumes:
-  #     - ./db/migrations:/db/migrations:ro
-  #   command:
-  #     [
-  #       '--migrations-dir',
-  #       '/db/migrations',
-  #       '--url',
-  #       'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@cockroachdb-proxy:26257/${POSTGRES_DB}?sslmode=disable',
-  #       'up',
-  #     ]
-  #   restart: 'no'
-  #   networks:
-  #     - orderbook_network
-
   cockroachdb:
     image: cockroachdb/cockroach:latest-v25.2
     container_name: orderbook_cockroachdb
@@ -114,11 +52,7 @@ services:
           'CMD-SHELL',
           "cockroach sql --insecure --host=localhost:26258 -e 'SELECT 1' >/dev/null 2>&1 || exit 1",
         ]
-      # test:
-      #   [
-      #     'CMD-SHELL',
       #     "cockroach sql --insecure --host=localhost:26257 -e 'SELECT 1' >/dev/null 2>&1 || exit 1",
-      #   ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -145,14 +79,7 @@ services:
       - '--url'
       - 'postgres://${POSTGRES_USER}@cockroachdb:26258/${POSTGRES_DB}?sslmode=disable'
       - 'up'
-    # command:
-    #   [
-    #     '--migrations-dir',
-    #     '/db/migrations',
-    #     '--url',
     #     'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@cockroachdb:26257/${POSTGRES_DB}?sslmode=disable',
-    #     'up',
-    #   ]
     restart: 'no'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
@@ -433,6 +360,8 @@ services:
     depends_on:
       flink-jobmanager:
         condition: service_healthy
+      flink-taskmanager:
+        condition: service_started
     volumes:
       - ./src:/opt/src
     env_file:
@@ -440,11 +369,16 @@ services:
     environment:
       - FLINK_JOBMANAGER_HOST=flink-jobmanager
       - PYTHONPATH=/opt:/opt/src
+
     entrypoint: >
       bash -lc '
         set -e
         echo "Waiting for Flink JobManager to be ready..."
         until /opt/flink/bin/flink list -m flink-jobmanager:8081 >/dev/null 2>&1; do
+          sleep 2
+        done
+        echo "Waiting for at least one TaskManager..."
+        until curl -sf http://flink-jobmanager:8081/taskmanagers | grep -q "\"id\""; do
           sleep 2
         done
         echo "JobManager ready! Submitting jobs..."
@@ -454,19 +388,6 @@ services:
         echo "All jobs submitted!"
         exit 0
       '
-    # entrypoint: >
-    #   bash -c "
-    #     echo 'Waiting for Flink JobManager to be ready...' &&
-    #     until curl -sf http://flink-jobmanager:8081/overview > /dev/null; do
-    #       sleep 2;
-    #     done &&
-    #     echo 'JobManager ready! Submitting jobs...' &&
-    #     /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d &&
-    #     /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d &&
-    #     /opt/flink/bin/flink run -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d &&
-    #     echo 'All jobs submitted!' &&
-    #     tail -f /dev/null
-    #   "
     restart: 'no'
     networks:
       - orderbook_network

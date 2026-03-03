@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+from dashboard.components.gauge import render_imbalance_gauge
+
 # Add project root to sys.path for Streamlit Cloud compatibility
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -114,6 +116,7 @@ with col_windowed_stats:
 with col_alert_freq:
     # st.bar_chart()
     st.text('TODO: Alert Frequency')
+    render_imbalance_gauge(symbol)
 
 
 with st.container(border=True):

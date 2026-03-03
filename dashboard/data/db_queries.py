@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from dashboard.utils.async_runner import run_async
 from dashboard.utils.formatting import get_valid_timezone
 from src.common.database import DatabaseClient
+from src.common.models import OrderBookWindowedMetrics
 from dashboard.data.redis_queries import get_redis_client
 
 # should streamlit's connection be used instead of DatabaseClient ??
@@ -253,7 +254,10 @@ class DatabaseQueries:
                     LIMIT $3
                 """, symbol, window_type, limit)
 
-                return [dict(row) for row in rows]
+                return [
+                    OrderBookWindowedMetrics.model_validate(dict(row)).model_dump(mode='python')
+                    for row in rows
+                ]
 
         except Exception as e:
             logger.error(f"Error fetching windowed aggregates: {e}")
@@ -291,7 +295,10 @@ class DatabaseQueries:
                                     window_type: str = '5m_sliding') -> Optional[Dict]:
         """Fetch the most recent windowed aggregate."""
         try:
-            return await self.db.fetch_latest_windowed_metrics(symbol, window_type)
+            row = await self.db.fetch_latest_windowed_metrics(symbol, window_type)
+            if not row:
+                return None
+            return OrderBookWindowedMetrics.model_validate(row).model_dump(mode='python')
 
         except Exception as e:
             logger.error(f"Error fetching latest windowed: {e}")

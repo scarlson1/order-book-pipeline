@@ -9,6 +9,7 @@ from src.common.models import (
     OrderBookLevel,
     OrderBookMetrics,
     OrderBookSnapshot,
+    OrderBookWindowedMetrics,
     Severity,
     Side,
 )
@@ -602,6 +603,71 @@ def test_order_book_metrics_requires_spread_bps():
 
 
 # =============================================================================
+# OrderBookWindowedMetrics
+# =============================================================================
+
+
+def _windowed_required_fields():
+    """Minimal required fields for OrderBookWindowedMetrics."""
+    return {
+        'symbol': 'BTCUSDT',
+        'window_type': '5m_sliding',
+        'window_start': datetime(2024, 1, 15, 12, 0, 0),
+        'window_end': datetime(2024, 1, 15, 12, 5, 0),
+        'window_duration_seconds': 300,
+        'sample_count': 60,
+    }
+
+
+def test_order_book_windowed_metrics_valid_creation_minimal():
+    data = _windowed_required_fields()
+    model = OrderBookWindowedMetrics(**data)
+    assert model.symbol == 'BTCUSDT'
+    assert model.window_type == '5m_sliding'
+    assert model.window_start == data['window_start']
+    assert model.window_end == data['window_end']
+    assert model.time == data['window_end']
+    assert model.sample_count == 60
+
+
+def test_order_book_windowed_metrics_symbol_uppercased():
+    data = _windowed_required_fields()
+    data['symbol'] = '  ethusdt  '
+    model = OrderBookWindowedMetrics(**data)
+    assert model.symbol == 'ETHUSDT'
+
+
+def test_order_book_windowed_metrics_rejects_invalid_window_bounds():
+    data = _windowed_required_fields()
+    data['window_start'] = datetime(2024, 1, 15, 12, 6, 0)
+    data['window_end'] = datetime(2024, 1, 15, 12, 5, 0)
+    with pytest.raises(ValidationError, match='window_end must be greater than or equal to window_start'):
+        OrderBookWindowedMetrics(**data)
+
+
+def test_order_book_windowed_metrics_rejects_negative_sample_count():
+    data = _windowed_required_fields()
+    data['sample_count'] = -1
+    with pytest.raises(ValidationError) as exc_info:
+        OrderBookWindowedMetrics(**data)
+    errors = exc_info.value.errors()
+    assert any(e['loc'] == ('sample_count',) for e in errors)
+
+
+def test_order_book_windowed_metrics_from_dict():
+    data = {
+        **_windowed_required_fields(),
+        'symbol': 'btcusdt',
+        'avg_imbalance': 0.12,
+        'avg_spread_bps': 1.8,
+    }
+    model = OrderBookWindowedMetrics.model_validate(data)
+    assert model.symbol == 'BTCUSDT'
+    assert model.avg_imbalance == 0.12
+    assert model.avg_spread_bps == 1.8
+
+
+# =============================================================================
 # Alert
 # =============================================================================
 
@@ -841,4 +907,3 @@ def test_alert_requires_alert_type():
         Alert(**data)
     errors = exc_info.value.errors()
     assert any(e["loc"] == ("alert_type",) for e in errors)
-

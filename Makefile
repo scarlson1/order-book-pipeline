@@ -91,7 +91,7 @@ flink-logs:
 	docker compose logs -f flink-jobmanager flink-taskmanager
 
 flink-jobs:
-	docker compose exec flink-jobmanager flink list
+	docker compose exec flink-jobmanager flink list -a -m flink-jobmanager:8081
 
 flink-submit:
 	docker compose --profile auto-submit up -d --force-recreate flink-job-submitter

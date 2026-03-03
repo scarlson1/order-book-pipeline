@@ -5,8 +5,10 @@ import datetime
 from typing import Optional
 
 from loguru import logger
+from pydantic import ValidationError
 
 from src.common.database import DatabaseClient
+from src.common.models import OrderBookWindowedMetrics
 from src.common.redpanda_client import RedpandaConsumer
 from src.config import settings
 
@@ -58,7 +60,7 @@ class DatabaseConsumer:
         self._metrics_last_flush_time = datetime.datetime.now(datetime.timezone.utc)
 
         # Windowed batch state (separate batch for windowed data)
-        self._windowed_batch: list[dict] = []
+        self._windowed_batch: list[OrderBookWindowedMetrics] = []
         self._windowed_batch_keys: set[tuple] = set()
         self._windowed_batch_max_size = 100
         self._windowed_batch_timeout_seconds = 2.0
@@ -155,23 +157,34 @@ class DatabaseConsumer:
             await self._check_metrics_flush()
 
         elif topic == settings.redpanda_topics['windowed']:
+            parsed_windowed = self._parse_windowed_message(value)
             # Skip malformed legacy payloads so one poison-pill message
             # does not block the consumer group forever.
-            if not self._is_valid_windowed_message(value):
+            if parsed_windowed is None:
                 logger.warning(f"Skipping malformed windowed message: {value}")
                 await self._flush_pending_batches_without_commit()
                 await self.consumer.commit()
                 return
             # Windowed: add to batch
-            self._add_to_windowed_batch(value)
+            self._add_to_windowed_batch(parsed_windowed)
             await self._check_windowed_flush()
 
-    def _is_valid_windowed_message(self, value: dict) -> bool:
-        """Validate minimum schema needed for DB insertion."""
-        required = {'symbol', 'window_type', 'sample_count'}
+    def _parse_windowed_message(self, value: dict) -> Optional[OrderBookWindowedMetrics]:
+        """Validate and normalize a windowed payload."""
         if not isinstance(value, dict):
-            return False
-        return required.issubset(value.keys())
+            return None
+
+        payload = {
+            **value,
+            'window_start': self._parse_timestamp(value.get('window_start')),
+            'window_end': self._parse_timestamp(value.get('window_end'))
+        }
+
+        try:
+            return OrderBookWindowedMetrics.model_validate(payload)
+        except ValidationError as error:
+            logger.warning(f'Invalid windowed payload (validation error): {error}')
+            return None
 
     def _add_to_metrics_batch(self, value: dict) -> None:
         """Add metrics to batch."""
@@ -191,26 +204,19 @@ class DatabaseConsumer:
 
         logger.debug(f"Added to metrics batch (size: {len(self._metrics_batch)})")
 
-    def _add_to_windowed_batch(self, value: dict) -> None:
+    def _add_to_windowed_batch(self, value: OrderBookWindowedMetrics) -> None:
         """Add windowed metrics to batch."""
-        # Parse timestamps
-        window_start = self._parse_timestamp(value.get('window_start'))
-        window_end = self._parse_timestamp(value.get('window_end'))
         dedupe_key = (
-            value.get('symbol'),
-            value.get('window_type'),
-            window_start,
-            window_end,
+            value.symbol,
+            value.window_type,
+            value.window_start,
+            value.window_end,
         )
         if dedupe_key in self._windowed_batch_keys:
             logger.debug(f"Skipping duplicate windowed record in active batch: {dedupe_key}")
             return
 
-        self._windowed_batch.append({
-            **value, 
-            'window_start': window_start,
-            'window_end': window_end
-        })
+        self._windowed_batch.append(value)
         self._windowed_batch_keys.add(dedupe_key)
 
         logger.debug(f"Added to windowed batch (size: {len(self._windowed_batch)})")
