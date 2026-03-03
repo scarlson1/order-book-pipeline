@@ -66,10 +66,19 @@ def render_imbalance_trend(symbol: str, timezone_pref: str = 'America/New_York',
 
     rows = _get_imb_trend_data(symbol)
     # print(f"DEBUG: {len(rows) if rows else 0} rows of windowed data")
-    
+
     df = pd.DataFrame(rows)
+
+    if df.empty:
+        st.warning('No data available for imbalance chart')
+        return
+
     # convert UTC to specified timezone
-    df['time'] = df['time'].dt.tz_convert(timezone_pref)
+    if 'time' in df.columns:
+        df['time'] = df['time'].dt.tz_convert(timezone_pref)
+    else:
+        st.error(f"Expected 'time' column not found in data columns: {df.columns.tolist()}")
+        return
 
     print(f"DEBUG: First time: {df['time'].min()}, Last time: {df['time'].max()}")
     print(f"DEBUG: Time range: {df['time'].max() - df['time'].min()}")
