@@ -170,6 +170,7 @@ class RedisConsumer:
         Caches metrics with 60s TTL.
         """
         value = msg.value
+        logger.info('WRITING METRICS FOR {symbol} - 1: {value}')
         if not value:
             logger.warning('Empty message value for metrics')
             return
@@ -192,6 +193,8 @@ class RedisConsumer:
             metrics_payload['time'] = metrics_payload['timestamp']
         if 'timestamp' not in metrics_payload and metrics_payload.get('time') is not None:
             metrics_payload['timestamp'] = metrics_payload['time']
+
+        logger.info('WRITING METRICS FOR {symbol} - 2')
 
         await self.redis.insert_metrics(
             symbol=symbol,

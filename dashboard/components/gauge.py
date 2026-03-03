@@ -122,6 +122,7 @@ def render_imbalance_gauge(symbol: str, refresh_rate: int = 2000):
     st.write(data)
     event_time = _coerce_datetime(data.get('time'))
     if event_time is not None:
+        # TODO: use reload/timing function like render_countdown to show updated x.y seconds ago
         st.write(event_time)
         if event_time.tzinfo is None:
             event_time = event_time.replace(tzinfo=timezone.utc)
@@ -132,8 +133,7 @@ def render_imbalance_gauge(symbol: str, refresh_rate: int = 2000):
 
         st.plotly_chart(fig)
         st.write(f'Last updated: **{seconds_ago} seconds ago**')
-        st.write(f'Actual time: {now.strftime("%H:%M:%S")}')
 
-        # render_countdown_from_timestamp(event_time)
+        # render_countdown_from_timestamp(event_time, 2)
     else:
         st.plotly_chart(fig)

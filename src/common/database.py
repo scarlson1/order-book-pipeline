@@ -89,6 +89,7 @@ class DatabaseClient:
         table_name: str,
         columns: list[str],
         records_chunk: list[tuple],
+        on_conflict_clause: str | None = None,
     ) -> None:
         """Write a chunk with batched INSERT and retry on retryable Cockroach errors."""
         if not self.pool:
@@ -96,7 +97,9 @@ class DatabaseClient:
 
         placeholders = ', '.join(f'${index}' for index in range(1, len(columns) + 1))
         columns_sql = ', '.join(columns)
-        insert_sql = (f'INSERT INTO {table_name} ({columns_sql}) VALUES ({placeholders})')
+        conflict_sql = f' {on_conflict_clause}' if on_conflict_clause else ''
+        insert_sql = (f'INSERT INTO {table_name} ({columns_sql}) VALUES ({placeholders})'
+                      f'{conflict_sql}')
 
         for attempt in range(1, self.max_write_retries + 1):
             try:
@@ -119,6 +122,7 @@ class DatabaseClient:
         table_name: str,
         columns: list[str],
         records_chunk: list[tuple],
+        on_conflict_clause: str | None = None,
     ) -> None:
         """Write a chunk using COPY with fallback and retry behavior for Cockroach."""
         if not self.pool:
@@ -132,12 +136,22 @@ class DatabaseClient:
                                                      columns=columns)
                 return
             except asyncpg.PostgresError as error:
+                if getattr(error, 'sqlstate', None) == '23505' and on_conflict_clause:
+                    logger.warning(f'Duplicate keys detected while writing {table_name}; '
+                                   f'falling back to INSERT {on_conflict_clause}')
+                    await self._write_chunk_with_executemany(table_name=table_name,
+                                                             columns=columns,
+                                                             records_chunk=records_chunk,
+                                                             on_conflict_clause=on_conflict_clause)
+                    return
+
                 if self._should_fallback_from_copy(error):
                     logger.warning(f'COPY fallback for {table_name}; using INSERT executemany '
                                    f'(sqlstate={getattr(error, "sqlstate", "unknown")}): {error}')
                     await self._write_chunk_with_executemany(table_name=table_name,
                                                              columns=columns,
-                                                             records_chunk=records_chunk)
+                                                             records_chunk=records_chunk,
+                                                             on_conflict_clause=on_conflict_clause)
                     return
 
                 if (self._is_retryable_transaction_error(error)
@@ -155,13 +169,15 @@ class DatabaseClient:
         table_name: str,
         columns: list[str],
         records: list[tuple],
+        on_conflict_clause: str | None = None,
     ) -> None:
         """Insert records in chunks with COPY and Cockroach-aware fallback/retry."""
         for records_chunk in self._chunk_records(records=records,
                                                  chunk_size=self.bulk_write_chunk_size):
             await self._write_chunk_with_copy(table_name=table_name,
                                               columns=columns,
-                                              records_chunk=records_chunk)
+                                              records_chunk=records_chunk,
+                                              on_conflict_clause=on_conflict_clause)
 
     async def insert_metrics(self, metrics: Dict) -> None:
         """Insert order book metrics.
@@ -224,7 +240,8 @@ class DatabaseClient:
 
         await self._bulk_insert_records(table_name='orderbook_metrics',
                                         columns=columns,
-                                        records=records)
+                                        records=records,
+                                        on_conflict_clause='ON CONFLICT (symbol, time) DO NOTHING')
 
         logger.debug(f"Inserted batch of {len(metrics)} metrics")
 
@@ -300,7 +317,8 @@ class DatabaseClient:
 
         await self._bulk_insert_records(table_name='orderbook_metrics_windowed',
                                         columns=columns,
-                                        records=records)
+                                        records=records,
+                                        on_conflict_clause='ON CONFLICT (time, symbol, window_type) DO NOTHING')
 
         logger.debug(f"Inserted batch of {len(validated_windowed)} windowed metrics")
 
