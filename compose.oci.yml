@@ -92,6 +92,8 @@ services:
     depends_on:
       flink-jobmanager:
         condition: service_healthy
+    env_file:
+      - .env.oci
     volumes:
       - ./src:/opt/src
     entrypoint: >

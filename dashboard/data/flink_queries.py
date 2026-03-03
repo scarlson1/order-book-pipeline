@@ -12,6 +12,21 @@ class FlinkQueries:
     def __init__(self):
         self._base_url = settings.flink_ui_url
 
+    async def _get_json(self, session: aiohttp.ClientSession,
+                        paths: list[str]) -> tuple[dict | None, int, str]:
+        """Try multiple Flink API paths for compatibility across versions."""
+        last_error = ''
+        for path in paths:
+            url = f'{self._base_url}{path}'
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                    if response.status == 200:
+                        return await response.json(), 200, path
+                    last_error = f'HTTP {response.status} ({path})'
+            except Exception as e:
+                last_error = f'{e} ({path})'
+        return None, 0, last_error
+
     async def check_health(self) -> Dict:
         """Check Flink JobManager health.
         
@@ -20,28 +35,20 @@ class FlinkQueries:
         """
         try:
             async with aiohttp.ClientSession() as session:
-                # Get overview to check if JobManager is running
-                async with session.get(
-                    f"{self._base_url}/v1/overview",
-                    timeout=aiohttp.ClientTimeout(total=5)
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return {
-                            'healthy': True,
-                            'task_managers': data.get('taskmanagers', 0),
-                            'slots_total': data.get('slots-total', 0),
-                            'slots_available': data.get('slots-available', 0),
-                            'jobs_running': data.get('jobs-running', 0),
-                            'jobs_finished': data.get('jobs-finished', 0),
-                            'jobs_cancelled': data.get('jobs-cancelled', 0),
-                            'jobs_failed': data.get('jobs-failed', 0),
-                        }
-                    else:
-                        return {
-                            'healthy': False,
-                            'error': f"HTTP {response.status}"
-                        }
+                data, status, path = await self._get_json(session, ['/overview', '/v1/overview'])
+                if status == 200 and data:
+                    return {
+                        'healthy': True,
+                        'endpoint': path,
+                        'task_managers': data.get('taskmanagers', 0),
+                        'slots_total': data.get('slots-total', 0),
+                        'slots_available': data.get('slots-available', 0),
+                        'jobs_running': data.get('jobs-running', 0),
+                        'jobs_finished': data.get('jobs-finished', 0),
+                        'jobs_cancelled': data.get('jobs-cancelled', 0),
+                        'jobs_failed': data.get('jobs-failed', 0),
+                    }
+                return {'healthy': False, 'error': path}
         except aiohttp.ClientError as e:
             logger.error(f"Flink health check failed: {e}")
             return {'healthy': False, 'error': str(e)}
@@ -57,14 +64,10 @@ class FlinkQueries:
         """
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._base_url}/v1/jobs",
-                    timeout=aiohttp.ClientTimeout(total=5)
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return data.get('jobs', [])
-                    return []
+                data, status, _ = await self._get_json(session, ['/jobs', '/v1/jobs'])
+                if status == 200 and data:
+                    return data.get('jobs', [])
+                return []
         except Exception as e:
             logger.error(f"Failed to get Flink jobs: {e}")
             return []
@@ -80,13 +83,12 @@ class FlinkQueries:
         """
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._base_url}/v1/jobs/{job_id}",
-                    timeout=aiohttp.ClientTimeout(total=5)
-                ) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    return None
+                for path in (f'/jobs/{job_id}', f'/v1/jobs/{job_id}'):
+                    async with session.get(f'{self._base_url}{path}',
+                                           timeout=aiohttp.ClientTimeout(total=5)) as response:
+                        if response.status == 200:
+                            return await response.json()
+                return None
         except Exception as e:
             logger.error(f"Failed to get job details for {job_id}: {e}")
             return None
@@ -98,28 +100,24 @@ class FlinkQueries:
             Dict with job health status
         """
         jobs = await self.get_jobs()
-        
+
         if not jobs:
-            return {
-                'healthy': False,
-                'jobs_found': 0,
-                'error': 'No jobs found'
-            }
-        
+            return {'healthy': False, 'jobs_found': 0, 'error': 'No jobs found'}
+
         job_statuses = {}
         running_count = 0
         failed_count = 0
-        
+
         for job in jobs:
             job_id = job.get('id', 'unknown')
             status = job.get('status', 'UNKNOWN')
             job_statuses[job_id] = status
-            
+
             if status == 'RUNNING':
                 running_count += 1
             elif status == 'FAILED':
                 failed_count += 1
-        
+
         return {
             'healthy': running_count > 0 and failed_count == 0,
             'jobs_found': len(jobs),
@@ -136,7 +134,7 @@ class FlinkQueries:
         """
         jm_health = await self.check_health()
         jobs_health = await self.check_jobs_health()
-        
+
         return {
             'healthy': jm_health.get('healthy', False) and jobs_health.get('healthy', False),
             'jobmanager': jm_health,
