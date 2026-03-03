@@ -16,6 +16,8 @@ from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.typeinfo import Types
 from pyflink.datastream.window import SlidingEventTimeWindows, TumblingProcessingTimeWindows
 from pyflink.datastream.functions import AggregateFunction
+from pyflink.datastream.functions import ProcessWindowFunction
+from pyflink.datastream.window import TimeWindow
 
 try:
     from src.common.utils import apply_kafka_security
@@ -113,17 +115,14 @@ class WindowAggFunction(AggregateFunction):
 
     def get_result(self, acc: dict) -> dict:
         count = acc['sample_count']
-        window_end = datetime.now(timezone.utc)
-        window_start = window_end - timedelta(seconds=self.window_duration_seconds)
+        # window_end = datetime.now(timezone.utc)
+        # window_start = window_end - timedelta(seconds=self.window_duration_seconds)
 
-        # TODO(cockroach-cutover): include OHLC + stddev fields in this output
-        # once they are computed in the accumulator and update DB schema
-        # (orderbook_metrics_windowed) and consumers accordingly.
         payload = {
             'symbol': acc['symbol'],
             'window_type': self.window_type,
-            'window_start': window_start.isoformat(),
-            'window_end': window_end.isoformat(),
+            # 'window_start': window_start.isoformat(), # filled by WindowMetadataFunction
+            # 'window_end': window_end.isoformat(),     # filled by WindowMetadataFunction
             'window_duration_seconds': self.window_duration_seconds,
             'avg_mid_price': (acc['mid_price_total'] / count) if count else None,
             'avg_imbalance': (acc['imb_total'] / count) if count else None,
@@ -141,7 +140,7 @@ class WindowAggFunction(AggregateFunction):
             'sample_count': count,
             'window_velocity': None,
         }
-        return OrderBookWindowedMetrics.model_validate(payload).model_dump(mode='json')
+        return payload # OrderBookWindowedMetrics.model_validate(payload).model_dump(mode='json')
 
     def merge(self, a: dict, b: dict) -> dict:
         return {
@@ -174,6 +173,26 @@ class WindowAggFunction(AggregateFunction):
         }
 
 
+class WindowMetadataFunction(ProcessWindowFunction):
+    """Enriches aggregate result with actual Flink window boundaries."""
+    
+    def process(self, key, context, elements, out):
+        # elements contains the single result from AggregateFunction
+        result = list(elements)[0]
+        window: TimeWindow = context.window()
+        
+        window_start = datetime.fromtimestamp(
+            window.start / 1000, tz=timezone.utc
+        )
+        window_end = datetime.fromtimestamp(
+            window.end / 1000, tz=timezone.utc
+        )
+        result['window_start'] = window_start.isoformat()
+        result['window_end'] = window_end.isoformat()
+        result['time'] = result['window_end']
+        out.collect(result)
+
+
 def main():
     env = StreamExecutionEnvironment.get_execution_environment()
     env.enable_checkpointing(10 * 1000)
@@ -182,7 +201,10 @@ def main():
     # Configure watermark strategy for event time processing
     # Reference: https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/
     watermark_strategy = (WatermarkStrategy.for_bounded_out_of_orderness(
-        Duration.of_seconds(5)).with_idleness(Duration.of_seconds(10)))
+        Duration.of_seconds(5)).with_timestamp_assigner(
+            # extract milliseconds from metrics.timestamp
+            lambda event, _: int(event.timestamp.timestamp() * 1000)
+        ).with_idleness(Duration.of_seconds(10)))
 
     try:
         source_builder = (
@@ -204,30 +226,45 @@ def main():
 
         # tumbling 1 minute windows per symbol
         tumble_stream = (
-            metrics_stream.window(TumblingProcessingTimeWindows.of(Time.minutes(1))).aggregate(
-                WindowAggFunction('1m_tumbling', 60))
+            metrics_stream.window(
+                TumblingProcessingTimeWindows.of(Time.minutes(1))
+            ).aggregate(
+                WindowAggFunction('1m_tumbling', 60),
+                window_function=WindowMetadataFunction(),
+                accumulator_type=Types.MAP(Types.STRING(), Types.PICKLED_BYTE_ARRAY()),
+                output_type=Types.MAP(Types.STRING(), Types.PICKLED_BYTE_ARRAY()),
+            )
             # .window(TumblingProcessingTimeWindows.of(Duration.of_minutes(1)))
             # .aggregate(TumblingAggFunction())
             # .reduce()
         )  # need to group by window_start ?? need to create composite primary key in sink ??
 
         # sliding 5 minute windows every 30 seconds
-        five_min_sliding_stream = (metrics_stream.window(
-            SlidingEventTimeWindows.of(Time.minutes(5), Time.seconds(60))).aggregate(
-                WindowAggFunction('5m_sliding', 300)))
+        five_min_sliding_stream = (
+            metrics_stream.window(
+                SlidingEventTimeWindows.of(Time.minutes(5), Time.seconds(60))
+            ).aggregate(
+                WindowAggFunction('5m_sliding', 300),
+                window_function=WindowMetadataFunction(),
+                accumulator_type=Types.MAP(Types.STRING(), Types.PICKLED_BYTE_ARRAY()),
+                output_type=Types.MAP(Types.STRING(), Types.PICKLED_BYTE_ARRAY()),
+            )
+        )
         # https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/operators/windows/#working-with-window-results
 
         all_windowed = tumble_stream.union(five_min_sliding_stream)
 
         aggregate_sink_builder = (
-            KafkaSink.builder().set_bootstrap_servers(
-                settings.redpanda_bootstrap_servers).set_record_serializer(
-                    KafkaRecordSerializationSchema.builder().set_topic(
-                        settings.redpanda_topics['windowed']).set_value_serialization_schema(
-                            SimpleStringSchema()).build()).set_delivery_guarantee(
-                                DeliveryGuarantee.AT_LEAST_ONCE).set_transactional_id_prefix(
-                                    'orderbook-windowed')
-            # .build()
+            KafkaSink.builder()
+            .set_bootstrap_servers(settings.redpanda_bootstrap_servers)
+            .set_record_serializer(
+                KafkaRecordSerializationSchema.builder()
+                .set_topic(settings.redpanda_topics['windowed'])
+                .set_value_serialization_schema(SimpleStringSchema())
+                .build()
+            )
+            .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+            .set_transactional_id_prefix('orderbook-windowed')
         )
         aggregate_sink = apply_kafka_security(aggregate_sink_builder).build()
 

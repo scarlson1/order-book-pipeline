@@ -93,11 +93,12 @@ SELECT
   time,
   window_start,
   window_end,
+  EXTRACT(EPOCH FROM (window_end - window_start))::INT AS window_duration_seconds,
   avg_mid_price,
   avg_imbalance,
   avg_spread_bps,
   avg_total_volume,
-  sample_count
+  sample_count,
 FROM orderbook_metrics_windowed w
 WHERE time = (
   SELECT MAX(time) FROM orderbook_metrics_windowed

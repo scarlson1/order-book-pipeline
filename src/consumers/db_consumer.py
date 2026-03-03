@@ -38,15 +38,20 @@ class DatabaseConsumer:
     """
 
     def __init__(self):
+        # Metrics + alerts consumer (high volume, frequent commits)
         self.consumer = RedpandaConsumer(
-            topics=[
-                settings.redpanda_topics['metrics'], 
-                settings.redpanda_topics['alerts'],
-                settings.redpanda_topics['windowed']
-            ],
-            group_id='db-writer',
-            auto_commit=False,  # Manual commit after successful DB write
-            auto_offset_reset='latest')
+            topics=[settings.redpanda_topics['metrics'], settings.redpanda_topics['alerts']],
+            group_id='db-writer-metrics',
+            auto_commit=False,
+            auto_offset_reset='latest'
+        )
+        # Windowed consumer (low volume, separate offset tracking)
+        self.windowed_consumer = RedpandaConsumer(
+            topics=[settings.redpanda_topics['windowed']],
+            group_id='db-writer-windowed',
+            auto_commit=False,
+            auto_offset_reset='latest'
+        )
         self.db = DatabaseClient()
 
         # Cockroach-oriented defaults: keep commit cadence low-latency,
@@ -69,6 +74,7 @@ class DatabaseConsumer:
         # state
         self._running = False
         self._start_task: Optional[asyncio.Task] = None  # track running task state
+        self._windowed_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
         """Start the database consumer."""
@@ -80,7 +86,11 @@ class DatabaseConsumer:
         self._running = True
 
         # Connect to both database and Redpanda
-        await asyncio.gather(self.db.connect(), self.consumer.connect())
+        await asyncio.gather(
+            self.db.connect(),
+            self.consumer.connect(),
+            self.windowed_consumer.connect()
+        )
 
         logger.info(f'DatabaseConsumer started - consuming from '
                     f"{settings.redpanda_topics['metrics']}, "
@@ -88,7 +98,9 @@ class DatabaseConsumer:
                     f"{settings.redpanda_topics['windowed']}")
 
         # Start consumption in background task
+        # Run metrics/alerts and windowed loops concurrently
         self._start_task = asyncio.create_task(self._consume_loop())
+        self._windowed_task = asyncio.create_task(self._windowed_consume_loop())
 
     async def stop(self) -> None:
         """Stop the consumer gracefully."""
@@ -112,7 +124,11 @@ class DatabaseConsumer:
         await self._flush_pending_batches_without_commit()
 
         # Close connections (commits offsets)
-        await asyncio.gather(self.consumer.close(), self.db.close())
+        await asyncio.gather(
+            self.consumer.close(),
+            self.windowed_consumer.close(),
+            self.db.close()
+        )
 
         logger.info("DatabaseConsumer stopped")
 
@@ -139,6 +155,31 @@ class DatabaseConsumer:
             if self._running:
                 await self.stop()
 
+    async def _windowed_consume_loop(self) -> None:
+        """Handles windowed topic independently with its own commit cadence."""
+        try:
+            async for msg in self.windowed_consumer.consume():
+                if not self._running:
+                    break
+                try:
+                    parsed = self._parse_windowed_message(msg.value)
+                    if parsed is None:
+                        logger.warning(f"Skipping malformed windowed message: {msg.value}")
+                        # Commit and move on — don't block the consumer
+                        await self.windowed_consumer.commit()
+                        continue
+
+                    self._add_to_windowed_batch(parsed)
+                    await self._check_windowed_flush()
+
+                except Exception as e:
+                    logger.error(f"Error processing windowed message: {e}")
+        except asyncio.CancelledError:
+            logger.info("Windowed consume loop cancelled")
+        except Exception as e:
+            logger.error(f"Fatal error in windowed consume loop: {e}")
+            raise
+
     async def _process_message(self, msg) -> None:
         """Process a single message from Redpanda.
         
@@ -156,18 +197,20 @@ class DatabaseConsumer:
             self._add_to_metrics_batch(value)
             await self._check_metrics_flush()
 
-        elif topic == settings.redpanda_topics['windowed']:
-            parsed_windowed = self._parse_windowed_message(value)
-            # Skip malformed legacy payloads so one poison-pill message
-            # does not block the consumer group forever.
-            if parsed_windowed is None:
-                logger.warning(f"Skipping malformed windowed message: {value}")
-                await self._flush_pending_batches_without_commit()
-                await self.consumer.commit()
-                return
-            # Windowed: add to batch
-            self._add_to_windowed_batch(parsed_windowed)
-            await self._check_windowed_flush()
+        else:
+            logger.warning(f'Unexpected topic in metrics consumer: {topic}')
+        # elif topic == settings.redpanda_topics['windowed']:
+        #     parsed_windowed = self._parse_windowed_message(value)
+        #     # Skip malformed legacy payloads so one poison-pill message
+        #     # does not block the consumer group forever.
+        #     if parsed_windowed is None:
+        #         logger.warning(f"Skipping malformed windowed message: {value}")
+        #         await self._flush_pending_batches_without_commit()
+        #         await self.consumer.commit()
+        #         return
+        #     # Windowed: add to batch
+        #     self._add_to_windowed_batch(parsed_windowed)
+        #     await self._check_windowed_flush()
 
     def _parse_windowed_message(self, value: dict) -> Optional[OrderBookWindowedMetrics]:
         """Validate and normalize a windowed payload."""
@@ -301,10 +344,11 @@ class DatabaseConsumer:
             logger.error(f"Failed to flush metrics batch: {e}")
             raise
 
-    async def _flush_windowed_batch(self,
-                                    commit_offsets: bool = True,
-                                    flush_other_batches: bool = True) -> None:
-        """Write windowed batch to database and commit offset."""
+    async def _flush_windowed_batch(
+        self,
+        commit_offsets: bool = True,
+        flush_other_batches: bool = True   # kept for signature compat, ignored
+    ) -> None:
         if not self._windowed_batch:
             return
 
@@ -319,9 +363,7 @@ class DatabaseConsumer:
             self._windowed_last_flush_time = datetime.datetime.now(datetime.timezone.utc)
 
             if commit_offsets:
-                if flush_other_batches and self._metrics_batch:
-                    await self._flush_metrics_batch(commit_offsets=False, flush_other_batches=False)
-                await self.consumer.commit()
+                await self.windowed_consumer.commit()  # ← windowed consumer only
                 logger.info(f"✓ Inserted {batch_size} windowed metrics and committed offset")
             else:
                 logger.info(f"✓ Inserted {batch_size} windowed metrics")
