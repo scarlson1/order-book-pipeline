@@ -510,7 +510,7 @@ class DatabaseClient:
                     COUNT(*) as sample_count
                 FROM orderbook_metrics
                 WHERE symbol = $1
-                    AND time >= NOW() - ($2 * INTERVAL '1 hour')
+                    AND time >= NOW() - ($2::INT * INTERVAL '1 hour')
             """, symbol, hours)
             # AND time >= NOW() - INTERVAL '$2 hours'
 
