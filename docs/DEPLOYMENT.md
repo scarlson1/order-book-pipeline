@@ -324,54 +324,67 @@ Required GitHub secrets:
 - `OCI_VM_USER`
 - `OCI_VM_SSH_KEY`
 
-Required GitHub variable:
+Required GitHub variable or secret:
 
-- `OCI_VM_HOST` (synced by `infra-apply-oci.yml`; `deploy-oci.yml` still supports secret fallback)
+- One of: `OCI_VM_HOST` variable (preferred, auto-synced by `infra-apply-oci.yml`) or `OCI_VM_HOST` secret (fallback).
 
-Required GitHub repository secrets for runtime `.env.oci` rendering:
+Runtime keys consumed by `.github/workflows/deploy-oci.yml` and written into `.env.oci`:
 
-- Runtime keys from `.env.oci.example` (for example: `DATABASE_URL`, `POSTGRES_*`, `REDIS_*`, `REDPANDA_*`, `FLINK_*`, and app settings such as `SYMBOLS`, thresholds, and `LOG_*`).
+Required (must resolve to a non-empty value at deploy time):
 
-Exact keys consumed by `.github/workflows/deploy-oci.yml` and written into `.env.oci`:
+- `DATABASE_URL` (secret)
+- `POSTGRES_HOST` (secret)
+- One of: `POSTGRES_PORT` variable or secret
+- One of: `POSTGRES_DB` variable or secret
+- `POSTGRES_USER` (secret)
+- `POSTGRES_PASSWORD` (secret)
+- One of: `POSTGRES_SSLMODE` variable or secret
+- One of: `REDIS_HOST` variable or secret
+- One of: `REDIS_PORT` variable or secret
+- One of: `REDIS_SSL` variable or secret
+- `REDPANDA_BOOTSTRAP_SERVERS` (secret)
+- One of: `REDPANDA_TOPIC_PREFIX` variable or secret
+- One of: `REDPANDA_SECURITY_PROTOCOL` variable or secret
+- One of: `REDPANDA_SSL_CHECK_HOSTNAME` variable or secret
+- One of: `REDPANDA_KAFKA_PORT` variable or secret
+- `FLINK_HOST` (secret)
+- `FLINK_PARALLELISM` (secret)
+- `FLINK_PORT` (secret)
+- `BINANCE_WS_URL` (secret)
+- `SYMBOLS` (secret)
+- `DEPTH_LEVELS` (secret)
+- `UPDATE_SPEED` (secret)
+- `CALCULATE_DEPTH` (secret)
+- `ROLLING_WINDOW_SECONDS` (secret)
+- `CALCULATE_VELOCITY` (secret)
+- `ALERT_THRESHOLD_HIGH` (secret)
+- `ALERT_THRESHOLD_MEDIUM` (secret)
+- `SPREAD_ALERT_MULTIPLIER` (secret)
+- `VELOCITY_THRESHOLD` (secret)
+- `LOG_LEVEL` (secret)
+- `LOG_FILE` (secret)
+- `ENVIRONMENT` (secret)
 
-Auto-synced GitHub Actions variables from `infra-apply-oci.yml`:
+Also referenced by deploy workflow (set if your environment needs them):
 
-- `OCI_VM_HOST`
+- `REDIS_PASSWORD` (secret)
+- `REDIS_URL` (secret)
+- `REDPANDA_SERVICE` (secret)
+- One of: `REDPANDA_SASL_MECHANISM` variable or secret
+- One of: `REDPANDA_USERNAME` variable or secret
+- `REDPANDA_PASSWORD` (secret)
 
-All other runtime values used by `deploy-oci.yml` must be set directly as repository
-secrets or variables.
+### `TF_VAR_*` vs deploy runtime secrets
 
-Required repository secrets (deploy fails if missing):
+Yes, they are different.
 
-- `DATABASE_URL`
-- `POSTGRES_HOST`
-- `POSTGRES_USER`
-- `POSTGRES_PASSWORD`
-- `REDPANDA_BOOTSTRAP_SERVERS`
-- `FLINK_HOST`
-- `FLINK_PARALLELISM`
-- `FLINK_PORT`
-- `BINANCE_WS_URL`
-- `SYMBOLS`
-- `DEPTH_LEVELS`
-- `UPDATE_SPEED`
-- `CALCULATE_DEPTH`
-- `ROLLING_WINDOW_SECONDS`
-- `CALCULATE_VELOCITY`
-- `ALERT_THRESHOLD_HIGH`
-- `ALERT_THRESHOLD_MEDIUM`
-- `SPREAD_ALERT_MULTIPLIER`
-- `VELOCITY_THRESHOLD`
-- `LOG_LEVEL`
-- `LOG_FILE`
-- `ENVIRONMENT`
+- `TF_VAR_*` secrets are used by `.github/workflows/infra-apply-oci.yml` (Terraform infrastructure provisioning).
+- Runtime app secrets above are used by `.github/workflows/deploy-oci.yml` (SSH deploy + `.env.oci` rendering).
 
-Optional repository secrets (allowed to be empty):
+Do you need to keep `TF_VAR_*`?
 
-- `REDIS_PASSWORD`
-- `REDIS_URL`
-- `REDPANDA_SERVICE`
-- `REDPANDA_PASSWORD`
+- Keep them if you still run `infra-apply-oci.yml` for VM/infrastructure updates.
+- If you no longer use Terraform workflow and only run deploys to an existing VM, `TF_VAR_*` can be removed.
 
 ## Rollback
 

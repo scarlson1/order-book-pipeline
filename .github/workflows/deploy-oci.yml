@@ -67,6 +67,10 @@ jobs:
             cd /opt/order-book-pipeline
             git fetch --all
             git checkout main
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "Stashing local changes before deploy pull"
+              git stash push --include-untracked --message "auto-deploy-$(date -u +%Y%m%dT%H%M%SZ)"
+            fi
             git pull --ff-only
 
             required_vars='DATABASE_URL POSTGRES_HOST POSTGRES_PORT POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD POSTGRES_SSLMODE REDIS_HOST REDIS_PORT REDIS_SSL REDPANDA_BOOTSTRAP_SERVERS REDPANDA_TOPIC_PREFIX REDPANDA_SECURITY_PROTOCOL REDPANDA_SSL_CHECK_HOSTNAME REDPANDA_KAFKA_PORT FLINK_HOST FLINK_PARALLELISM FLINK_PORT BINANCE_WS_URL SYMBOLS DEPTH_LEVELS UPDATE_SPEED CALCULATE_DEPTH ROLLING_WINDOW_SECONDS CALCULATE_VELOCITY ALERT_THRESHOLD_HIGH ALERT_THRESHOLD_MEDIUM SPREAD_ALERT_MULTIPLIER VELOCITY_THRESHOLD LOG_LEVEL LOG_FILE ENVIRONMENT'
