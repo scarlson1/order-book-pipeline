@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     redis_ssl: bool = False
     redis_username: str = "default"
     redis_db: int = 0
+    redis_snapshot_min_write_interval_seconds: int = 30
     redis_url_env: str | None = Field(
         default=None,
         validation_alias="REDIS_URL",
@@ -341,6 +342,17 @@ class Settings(BaseSettings):
         """Validate depth levels is reasonable."""
         if not 1 <= v <= 1000:
             raise ValueError(f"Depth levels must be 1-1000, got {v}")
+        return v
+
+    @field_validator('redis_snapshot_min_write_interval_seconds')
+    @classmethod
+    def validate_snapshot_write_interval(cls, v: int) -> int:
+        """Validate snapshot write interval is non-negative."""
+        if v < 0:
+            raise ValueError(
+                'REDIS_SNAPSHOT_MIN_WRITE_INTERVAL_SECONDS must be >= 0, '
+                f'got {v}'
+            )
         return v
 
     @model_validator(mode='after')
