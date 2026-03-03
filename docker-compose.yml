@@ -24,19 +24,85 @@ services:
   #   networks:
   #     - orderbook_network
 
+  # cockroachdb:
+  #   image: cockroachdb/cockroach:latest-v25.2
+  #   container_name: orderbook_cockroachdb
+  #   command:
+  #     - start-single-node
+  #     - --insecure
+  #     - --listen-addr=127.0.0.1:26257
+  #     - --http-addr=127.0.0.1:8080
+  #   ports:
+  #     - '26257:26257'
+  #     - '8088:8080'
+  #   volumes:
+  #     - cockroach_data:/cockroach/cockroach-data
+  #   healthcheck:
+  #     test:
+  #       [
+  #         'CMD-SHELL',
+  #         "timeout 5 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/26257' || exit 1",
+  #       ]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 15s
+  #   networks:
+  #     - orderbook_network
+
+  # # Socat proxy to make CockroachDB accessible from other containers
+  # cockroachdb-proxy:
+  #   image: alpine/socat:latest
+  #   container_name: orderbook_cockroachdb_proxy
+  #   depends_on:
+  #     cockroachdb:
+  #       condition: service_healthy
+  #   command: TCP-LISTEN:26257,reuseaddr,fork TCP:cockroachdb:26257
+  #   expose:
+  #     - '26257'
+  #   networks:
+  #     - orderbook_network
+  #   restart: unless-stopped
+
+  # db-migrate:
+  #   image: amacneil/dbmate:2
+  #   container_name: orderbook_db_migrate
+  #   depends_on:
+  #     cockroachdb-proxy:
+  #       condition: service_started
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ./db/migrations:/db/migrations:ro
+  #   command:
+  #     [
+  #       '--migrations-dir',
+  #       '/db/migrations',
+  #       '--url',
+  #       'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@cockroachdb-proxy:26257/${POSTGRES_DB}?sslmode=disable',
+  #       'up',
+  #     ]
+  #   restart: 'no'
+  #   networks:
+  #     - orderbook_network
+
   cockroachdb:
     image: cockroachdb/cockroach:latest-v25.2
     container_name: orderbook_cockroachdb
-    command: start-single-node --insecure --listen-addr=0.0.0.0:26257 --http-addr=0.0.0.0:8080 --advertise-addr=cockroachdb
+    # command: start-single-node --insecure --listen-addr=localhost:26257 --sql-addr=0.0.0.0:26257 --http-addr=0.0.0.0:8080 --advertise-addr=cockroachdb --accept-sql-without-tls
+    command: start-single-node --insecure --listen-addr=localhost:26257 --sql-addr=0.0.0.0:26258 --http-addr=0.0.0.0:8080 --advertise-addr=cockroachdb:26258 --accept-sql-without-tls
+    ports:
+      - '26258:26258'
+      - '8088:8080'
     env_file:
       - .env
     environment:
       COCKROACH_DATABASE: ${POSTGRES_DB}
       COCKROACH_USER: ${POSTGRES_USER}
       COCKROACH_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - '26257:26257' # connection port
-      - '8088:8080' # CockroachDB Admin UI (avoid conflict with Redpanda Console on :8080)
+    # ports:
+    #   - '26257:26257' # connection port
+    #   - '8088:8080' # CockroachDB Admin UI (avoid conflict with Redpanda Console on :8080)
     extra_hosts:
       - 'host.docker.internal:127.0.0.1' #// Linux
       - 'host.docker.internal:host-gateway' #// Access services on the host machine from within the Docker container
@@ -46,13 +112,22 @@ services:
       test:
         [
           'CMD-SHELL',
-          "cockroach sql --insecure --host=localhost:26257 -e 'SELECT 1' >/dev/null 2>&1",
+          "cockroach sql --insecure --host=localhost:26258 -e 'SELECT 1' >/dev/null 2>&1 || exit 1",
         ]
+      # test:
+      #   [
+      #     'CMD-SHELL',
+      #     "cockroach sql --insecure --host=localhost:26257 -e 'SELECT 1' >/dev/null 2>&1 || exit 1",
+      #   ]
       interval: 10s
       timeout: 5s
       retries: 5
+    # networks:
+    #   - orderbook_network
     networks:
-      - orderbook_network
+      orderbook_network:
+        aliases:
+          - cockroachdb
 
   db-migrate:
     image: amacneil/dbmate:2
@@ -65,14 +140,22 @@ services:
     volumes:
       - ./db/migrations:/db/migrations:ro
     command:
-      [
-        '--migrations-dir',
-        '/db/migrations',
-        '--url',
-        'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@cockroachdb:26257/${POSTGRES_DB}?sslmode=disable',
-        'up',
-      ]
+      - '--migrations-dir'
+      - '/db/migrations'
+      - '--url'
+      - 'postgres://${POSTGRES_USER}@cockroachdb:26258/${POSTGRES_DB}?sslmode=disable'
+      - 'up'
+    # command:
+    #   [
+    #     '--migrations-dir',
+    #     '/db/migrations',
+    #     '--url',
+    #     'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@cockroachdb:26257/${POSTGRES_DB}?sslmode=disable',
+    #     'up',
+    #   ]
     restart: 'no'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     networks:
       - orderbook_network
 
@@ -184,12 +267,14 @@ services:
       - .env
     environment:
       POSTGRES_HOST: cockroachdb
-      POSTGRES_PORT: 26257
+      POSTGRES_PORT: ${POSTGRES_PORT:-26258} # 26257
       POSTGRES_SSLMODE: disable
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs
     restart: unless-stopped
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     networks:
       - orderbook_network
 
@@ -210,7 +295,7 @@ services:
       - .env
     environment:
       POSTGRES_HOST: cockroachdb
-      POSTGRES_PORT: 26257
+      POSTGRES_PORT: ${POSTGRES_PORT:-26258} # 26257
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -222,6 +307,8 @@ services:
       - ./src:/app/src
       - ./logs:/app/logs
     restart: unless-stopped
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     networks:
       - orderbook_network
 
@@ -249,7 +336,7 @@ services:
     environment:
       - POSTGRES_URL=${POSTGRES_URL:-jdbc:postgresql://host.docker.internal:5432/postgres}
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-postgres}
       - PYTHONPATH=/opt:/opt/src
       - |
@@ -399,11 +486,13 @@ services:
         condition: service_healthy
     ports:
       - '8501:8501'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     env_file:
       - .env
     environment:
       POSTGRES_HOST: cockroachdb
-      POSTGRES_PORT: 26257
+      POSTGRES_PORT: ${POSTGRES_PORT:-26258} # 26257
       POSTGRES_SSLMODE: disable
     # environment:
     #   POSTGRES_HOST: timescaledb
