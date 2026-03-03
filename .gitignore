@@ -41,9 +41,12 @@ terraform/**/*.tfvars
 terraform/**/*.auto.tfvars
 terraform/**/tfplan
 terraform/**/tfplan-oci
+terraform/**/backend.hcl
+terraform/**/backend.*.hcl
 
 # Keep examples committed
 !terraform/**/terraform.tfvars.example
+!terraform/**/backend.oci.hcl.example
 
 # Keys/certs
 *.pem

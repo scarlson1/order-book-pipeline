@@ -47,15 +47,15 @@ output "upstash_redis_tls" {
 }
 
 output "redpanda_cluster_id" {
-  value = module.redpanda.cluster_id
+  value = var.enable_redpanda ? module.redpanda[0].cluster_id : null
 }
 
 output "redpanda_cluster_api_url" {
-  value = module.redpanda.cluster_api_url
+  value = var.enable_redpanda ? module.redpanda[0].cluster_api_url : null
 }
 
 output "redpanda_kafka_username" {
-  value = module.redpanda.kafka_username
+  value = var.enable_redpanda ? module.redpanda[0].kafka_username : null
 }
 
 output "redpanda_topic_prefix" {

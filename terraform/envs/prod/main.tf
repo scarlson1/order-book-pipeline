@@ -31,6 +31,7 @@ module "upstash" {
 }
 
 module "redpanda" {
+  count  = var.enable_redpanda ? 1 : 0
   source = "../../modules/redpanda"
 
   resource_group_name        = var.redpanda_resource_group_name

@@ -1,0 +1,107 @@
+name: Infra Apply OCI Only
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  apply_oci:
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_oci_tenancy_ocid: ${{ secrets.TF_VAR_OCI_TENANCY_OCID }}
+      TF_VAR_oci_user_ocid: ${{ secrets.TF_VAR_OCI_USER_OCID }}
+      TF_VAR_oci_fingerprint: ${{ secrets.TF_VAR_OCI_FINGERPRINT }}
+      TF_VAR_oci_region: ${{ secrets.TF_VAR_OCI_REGION }}
+      TF_VAR_oci_compartment_ocid: ${{ secrets.TF_VAR_OCI_COMPARTMENT_OCID }}
+      TF_VAR_oci_admin_cidr: ${{ secrets.TF_VAR_OCI_ADMIN_CIDR }}
+      TF_VAR_oci_ssh_public_key: ${{ secrets.TF_VAR_OCI_SSH_PUBLIC_KEY }}
+      TF_VAR_enable_redpanda: 'false'
+      # Placeholders to satisfy root variables while targeting only module.oci_vm
+      TF_VAR_cockroach_api_key: 'disabled'
+      TF_VAR_upstash_email: 'disabled@example.com'
+      TF_VAR_upstash_api_key: 'disabled'
+    defaults:
+      run:
+        working-directory: terraform/envs/prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Write OCI API Private Key
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/oci_api_key.pem"
+          printf '%s' '${{ secrets.OCI_API_PRIVATE_KEY_PEM }}' > "$key_path"
+          chmod 600 "$key_path"
+          echo "TF_VAR_oci_private_key_path=$key_path" >> "$GITHUB_ENV"
+
+      - name: Write Terraform Backend Config
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_NAMESPACE: ${{ vars.TF_STATE_NAMESPACE }}
+          TF_STATE_KEY: ${{ vars.TF_STATE_KEY }}
+          OCI_REGION: ${{ secrets.TF_VAR_OCI_REGION }}
+          OCI_TENANCY_OCID: ${{ secrets.TF_VAR_OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.TF_VAR_OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.TF_VAR_OCI_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+
+          : "${TF_STATE_BUCKET:?Missing repository variable TF_STATE_BUCKET}"
+          : "${TF_STATE_NAMESPACE:?Missing repository variable TF_STATE_NAMESPACE}"
+          : "${OCI_REGION:?Missing repository secret TF_VAR_OCI_REGION}"
+          : "${OCI_TENANCY_OCID:?Missing repository secret TF_VAR_OCI_TENANCY_OCID}"
+          : "${OCI_USER_OCID:?Missing repository secret TF_VAR_OCI_USER_OCID}"
+          : "${OCI_FINGERPRINT:?Missing repository secret TF_VAR_OCI_FINGERPRINT}"
+          : "${TF_VAR_oci_private_key_path:?Missing OCI API private key path from previous step}"
+
+          key="${TF_STATE_KEY:-orderbook-pipeline/prod/terraform.tfstate}"
+
+          cat > backend.hcl <<EOF
+          bucket    = "${TF_STATE_BUCKET}"
+          namespace = "${TF_STATE_NAMESPACE}"
+          key       = "${key}"
+          tenancy_ocid = "${OCI_TENANCY_OCID}"
+          user_ocid = "${OCI_USER_OCID}"
+          fingerprint = "${OCI_FINGERPRINT}"
+          private_key_path = "${TF_VAR_oci_private_key_path}"
+          region    = "${OCI_REGION}"
+          auth      = "APIKey"
+          EOF
+
+      - name: Terraform Init
+        run: terraform init -reconfigure -backend-config=backend.hcl
+
+      - name: Terraform Plan (OCI Only)
+        run: |
+          set -euo pipefail
+          terraform plan -target=module.oci_vm -out=tfplan-oci
+
+      - name: Terraform Apply (OCI Only)
+        run: terraform apply -auto-approve tfplan-oci
+
+      - name: Sync OCI Host Variable
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          host_ip="$(terraform output -raw oci_vm_public_ip)"
+
+          if gh api "/repos/${GITHUB_REPOSITORY}/actions/variables/OCI_VM_HOST" >/dev/null 2>&1; then
+            gh api \
+              --method PATCH \
+              "/repos/${GITHUB_REPOSITORY}/actions/variables/OCI_VM_HOST" \
+              -f name="OCI_VM_HOST" \
+              -f value="${host_ip}" >/dev/null
+            echo 'Updated OCI_VM_HOST'
+          else
+            gh api \
+              --method POST \
+              "/repos/${GITHUB_REPOSITORY}/actions/variables" \
+              -f name="OCI_VM_HOST" \
+              -f value="${host_ip}" >/dev/null
+            echo 'Created OCI_VM_HOST'
+          fi

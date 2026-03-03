@@ -47,7 +47,8 @@ flowchart LR
    - `compose.oci.yml`
    - `.env.oci.example`
    - `db/migrations/*`
-   - `.github/workflows/infra-apply.yml`
+   - `.github/workflows/infra-apply-oci.yml`
+   - `.github/workflows/infra-apply.yml` (disabled stub)
    - `.github/workflows/deploy-oci.yml`
 
 ## Step 1: Create Managed Services
@@ -143,14 +144,41 @@ If this step is skipped, Flink will fail to connect to Redpanda Serverless.
 
 1. Create tfvars from example:
    - `cp terraform/envs/prod/terraform.tfvars.example terraform/envs/prod/terraform.tfvars`
-2. Populate all required values.
-3. Run:
+2. Configure remote state backend:
+   - `cp terraform/envs/prod/backend.oci.hcl.example terraform/envs/prod/backend.hcl`
+   - update `bucket`, `namespace`, `tenancy_ocid`, `user_ocid`, `fingerprint`,
+     `private_key_path`, and optionally `key` in `backend.hcl`.
+3. Populate all required values in `terraform.tfvars`.
+   - To temporarily skip Redpanda provisioning/reads, set:
+     - `enable_redpanda = false`
+4. Run:
 
 ```bash
-terraform -chdir=terraform/envs/prod init
+terraform -chdir=terraform/envs/prod init -reconfigure -backend-config=backend.hcl
 terraform -chdir=terraform/envs/prod plan -var-file=terraform.tfvars -out=tfplan
 terraform -chdir=terraform/envs/prod apply tfplan
 terraform -chdir=terraform/envs/prod output
+```
+
+If `enable_redpanda = false`, target only non-Redpanda modules to avoid Redpanda
+destroy actions:
+
+```bash
+terraform -chdir=terraform/envs/prod plan \
+  -var-file=terraform.tfvars \
+  -target=module.oci_vm \
+  -target=module.cockroach \
+  -target=module.upstash \
+  -out=tfplan
+
+terraform -chdir=terraform/envs/prod apply tfplan
+```
+
+If you already have local state and are switching to remote backend, run this once
+instead of the `init -reconfigure` command above:
+
+```bash
+terraform -chdir=terraform/envs/prod init -migrate-state -backend-config=backend.hcl
 ```
 
 For your Upstash/Cockroach “already exists” errors (import):
@@ -171,7 +199,7 @@ terraform -chdir=terraform/envs/prod plan \
 terraform -chdir=terraform/envs/prod apply tfplan-oci
 ```
 
-4. Record VM public IP from output.
+5. Record VM public IP from output.
 
 Recommended OCI shape for this compose stack:
 
@@ -261,11 +289,12 @@ curl http://localhost:8081/overview
 
 ## Step 8: CI/CD Setup (Hybrid)
 
-### Infra workflow (manual)
+### Infra workflow (manual, OCI only)
 
-- Workflow: `.github/workflows/infra-apply.yml`
+- Workflow: `.github/workflows/infra-apply-oci.yml`
 - Trigger: `workflow_dispatch`
-- Purpose: Terraform `init/plan/apply`, then export outputs and sync `oci_vm_public_ip` to GitHub Actions variable `OCI_VM_HOST`
+- Purpose: Terraform `init/plan/apply` for `module.oci_vm` only, then sync `oci_vm_public_ip` to GitHub Actions variable `OCI_VM_HOST`
+- Note: `.github/workflows/infra-apply.yml` is intentionally disabled.
 
 Required GitHub secrets:
 
@@ -277,12 +306,12 @@ Required GitHub secrets:
 - `TF_VAR_OCI_COMPARTMENT_OCID`
 - `TF_VAR_OCI_ADMIN_CIDR`
 - `TF_VAR_OCI_SSH_PUBLIC_KEY`
-- `TF_VAR_COCKROACH_API_KEY`
-- `TF_VAR_UPSTASH_EMAIL`
-- `TF_VAR_UPSTASH_API_KEY`
-- `TF_VAR_REDPANDA_CLIENT_ID`
-- `TF_VAR_REDPANDA_CLIENT_SECRET`
-- `TF_VAR_REDPANDA_KAFKA_PASSWORD`
+
+Required GitHub variables (Terraform remote state backend):
+
+- `TF_STATE_BUCKET` (OCI Object Storage bucket for state)
+- `TF_STATE_NAMESPACE` (OCI Object Storage namespace)
+- `TF_STATE_KEY` (optional; defaults to `orderbook-pipeline/prod/terraform.tfstate`)
 
 ### App deploy workflow (on push to main)
 
@@ -297,7 +326,7 @@ Required GitHub secrets:
 
 Required GitHub variable:
 
-- `OCI_VM_HOST` (synced by `infra-apply.yml`; `deploy-oci.yml` still supports secret fallback)
+- `OCI_VM_HOST` (synced by `infra-apply-oci.yml`; `deploy-oci.yml` still supports secret fallback)
 
 Required GitHub repository secrets for runtime `.env.oci` rendering:
 
@@ -305,21 +334,12 @@ Required GitHub repository secrets for runtime `.env.oci` rendering:
 
 Exact keys consumed by `.github/workflows/deploy-oci.yml` and written into `.env.oci`:
 
-Auto-synced GitHub Actions variables from `infra-apply.yml`:
+Auto-synced GitHub Actions variables from `infra-apply-oci.yml`:
 
 - `OCI_VM_HOST`
-- `POSTGRES_PORT`
-- `POSTGRES_DB`
-- `POSTGRES_SSLMODE`
-- `REDIS_HOST`
-- `REDIS_PORT`
-- `REDIS_SSL`
-- `REDPANDA_USERNAME`
-- `REDPANDA_TOPIC_PREFIX`
-- `REDPANDA_SECURITY_PROTOCOL`
-- `REDPANDA_SASL_MECHANISM`
-- `REDPANDA_SSL_CHECK_HOSTNAME`
-- `REDPANDA_KAFKA_PORT`
+
+All other runtime values used by `deploy-oci.yml` must be set directly as repository
+secrets or variables.
 
 Required repository secrets (deploy fails if missing):
 

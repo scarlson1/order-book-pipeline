@@ -1,0 +1,10 @@
+# Copy to backend.hcl locally and populate with real values.
+bucket    = "orderbook-tfstate-prod"
+namespace = "your-object-storage-namespace"
+key       = "orderbook-pipeline/prod/terraform.tfstate"
+tenancy_ocid = "ocid1.tenancy.oc1..example"
+user_ocid = "ocid1.user.oc1..example"
+fingerprint = "aa:bb:cc:dd:ee:ff:11:22:33:44:55:66:77:88:99:00"
+private_key_path = "~/.oci/oci_api_key.pem"
+region    = "us-chicago-1"
+auth      = "APIKey"
