@@ -29,33 +29,23 @@ def _create_gauge_fig(imbalance: float):
     number={'valueformat': '.2f'},
     mode = "gauge+number",
     title = {'text': "Imbalance Ratio"},
-    # delta = {'reference': 380},
     gauge = {
-        # 'axis': {'range': [-1, 1]},
         'axis': {
             'range': [0, 1],
             'tickmode': 'array',
             'tickvals': [0, 0.25, 0.5, 0.75, 1],
             'ticktext': ['-1', '-0.5', '0', '0.5', '1'],
         },
-        'bar': {'color': "lightgrey"},
+        'bar': {'color': 'lightgrey', 'thickness': 0 },
         'steps': [
             {'range': [0.0, 0.335], 'color': '#EF4444'},
             {'range': [0.335, 0.665], 'color': '#6B7280'},
             {'range': [0.665, 1.0], 'color': '#22C55E'},
         ],
-        # 'steps' : [
-        #     {'range': [-1, -0.33], 'color': '#EF4444'},
-        #     {'range': [-0.33, 0.33], 'color': '#6B7280'},
-        #     {'range': [0.33, 1], 'color': '#22C55E'},
-        # ],
-        'threshold' : {'line': {'color': "black", 'width': 3},  'value': normalized}
+        'threshold' : {'line': {'color': "black", 'width': 4},  'value': normalized}
     }))
 
     return fig
-            # "buy": "#22C55E",      # Green
-            # "sell": "#EF4444",     # Red
-            # "neutral": "#6B7280",  # Gray
 
 def _coerce_datetime(ts) -> datetime | None:
     """Return timezone-aware datetime from input, or None."""
@@ -94,6 +84,19 @@ def render_countdown_from_timestamp(ts, ttl_seconds: int = 6) -> None:
     st.progress(pct_remaining, text=f'{remaining:0.1f}s remaining')
     st.metric('Time Remaining', f'{remaining:0.1f}s')
 
+def _render_last_updated(ts, interval: int = 100):
+    st_autorefresh(interval=interval, key='age_imb_gauge')
+
+    st.write(ts)
+    now = datetime.now(timezone.utc)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+
+    elapsed = now - ts
+    seconds_ago = round(elapsed.total_seconds(), 1)
+
+    st.caption(f'Updated: **{seconds_ago}s ago**')
+
 
 @st.fragment()
 def render_imbalance_gauge(symbol: str, refresh_rate: int = 2000):
@@ -119,21 +122,11 @@ def render_imbalance_gauge(symbol: str, refresh_rate: int = 2000):
     if 'start_time' not in st.session_state:
         st.session_state.start_time = datetime.now()
 
-    st.write(data)
     event_time = _coerce_datetime(data.get('time'))
     if event_time is not None:
-        # TODO: use reload/timing function like render_countdown to show updated x.y seconds ago
-        st.write(event_time)
-        if event_time.tzinfo is None:
-            event_time = event_time.replace(tzinfo=timezone.utc)
-
-        now = datetime.now(timezone.utc)
-        elapsed = now - event_time
-        seconds_ago = int(elapsed.total_seconds())
-
         st.plotly_chart(fig)
-        st.write(f'Last updated: **{seconds_ago} seconds ago**')
+        
+        _render_last_updated(event_time, 100)
 
-        # render_countdown_from_timestamp(event_time, 2)
     else:
         st.plotly_chart(fig)
