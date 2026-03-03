@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import Dict, List, Optional
 
 import redis.asyncio as redis
@@ -151,6 +152,24 @@ class RedisClient:
             return {}
 
     # ===== Name helpers ===== #
+
+    @staticmethod
+    def _alert_score(timestamp_value: object) -> float:
+        """Convert alert timestamp payload to sorted-set score."""
+        if isinstance(timestamp_value, (int, float)):
+            return float(timestamp_value)
+
+        if isinstance(timestamp_value, datetime):
+            return timestamp_value.timestamp()
+
+        if isinstance(timestamp_value, str):
+            try:
+                return float(timestamp_value)
+            except ValueError:
+                normalized = timestamp_value.replace('Z', '+00:00')
+                return datetime.fromisoformat(normalized).timestamp()
+
+        raise ValueError(f'Unsupported alert timestamp type: {type(timestamp_value).__name__}')
 
     @staticmethod
     def _metrics_key(symbol: str) -> str:
@@ -319,32 +338,27 @@ class RedisClient:
         try:
             key = self._alerts_key(symbol)
             data = json.dumps(alert, default=str)
-            timestamp = alert['timestamp']  # parse_timestamp(alert['timestamp'])
+            timestamp = self._alert_score(alert.get('timestamp'))
+            all_key = self._alerts_key('all')
 
             # use zadd for sorted list
             # Add to sorted set
             await self.client.zadd(key, {data: timestamp})
 
             # Also add to "all" feed
-            await self.client.zadd(self._alerts_key('all'), {data: timestamp})
+            await self.client.zadd(all_key, {data: timestamp})
 
             # Trim to last 100 (prevent unbounded growth)
-            await self.client.zremrangebyrank(
-                key,
-                0,
-                -max_alerts  # Keep only last 100
-            )
-            await self.client.zremrangebyrank(
-                self._alerts_key('all'),
-                0,
-                -max_alerts  # Keep only last 100
-            )
+            key_count = await self.client.zcard(key)
+            if key_count > max_alerts:
+                await self.client.zremrangebyrank(key, 0, key_count - max_alerts - 1)
 
-            # await self.client.lpush(key, data)
+            all_count = await self.client.zcard(all_key)
+            if all_count > max_alerts:
+                await self.client.zremrangebyrank(all_key, 0, all_count - max_alerts - 1)
 
-            # await self.client.ltrim(key, 0, max_alerts - 1)
-
-            # await self.client.expire(key, 3600) # 1 hour
+            await self.client.expire(key, 3600)
+            await self.client.expire(all_key, 3600)
 
             logger.debug(f'Added alert for {symbol}')
             return True
@@ -370,20 +384,12 @@ class RedisClient:
 
         try:
             key = self._alerts_key(symbol)
-
-            # alerts = await self.client.lrange(key, 0, limit - 1)
-
-            # return [json.loads(alert) for alert in alerts]
-
-            # Redis Sorted Set: scores are timestamps, values are alert JSON
-            # returns: list[tuple[ts, alert]]
-            # e.g. [[timestamp, { alert_type: 'VELOCITY_SPIKE', symbol: 'BTCUSDT', ... }]]
-            # https://redis.io/docs/latest/commands/zrevrange/
-            # deprecated - TODO update redis to current version (v5 -> v8) - replace zrevrange with "ZRANGE with the REV argument"
             alerts = await self.client.zrevrange(key, 0, limit - 1, withscores=True)
 
-            if alerts:
-                return [{**json.loads(alert), 'timestamp': score} for alert, score in alerts]
+            if not alerts:
+                return []
+
+            return [{**json.loads(alert), 'timestamp': score} for alert, score in alerts]
 
         except Exception as e:
             logger.error(f'failed to get alerts for {symbol}: {e}')

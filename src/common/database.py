@@ -224,6 +224,23 @@ class DatabaseClient:
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                     $11, $12, $13, $14, $15, $16, $17, $18
                 )
+                ON CONFLICT (symbol, time) DO UPDATE SET
+                    mid_price = EXCLUDED.mid_price,
+                    best_bid = EXCLUDED.best_bid,
+                    best_ask = EXCLUDED.best_ask,
+                    imbalance_ratio = EXCLUDED.imbalance_ratio,
+                    weighted_imbalance = EXCLUDED.weighted_imbalance,
+                    bid_volume = EXCLUDED.bid_volume,
+                    ask_volume = EXCLUDED.ask_volume,
+                    total_volume = EXCLUDED.total_volume,
+                    spread_bps = EXCLUDED.spread_bps,
+                    spread_abs = EXCLUDED.spread_abs,
+                    vtob_ratio = EXCLUDED.vtob_ratio,
+                    best_bid_volume = EXCLUDED.best_bid_volume,
+                    best_ask_volume = EXCLUDED.best_ask_volume,
+                    imbalance_velocity = EXCLUDED.imbalance_velocity,
+                    depth_levels = EXCLUDED.depth_levels,
+                    update_id = EXCLUDED.update_id
             """, metrics['timestamp'], metrics['symbol'], metrics['mid_price'],
                 metrics['best_bid'], metrics['best_ask'], metrics['imbalance_ratio'],
                 metrics.get('weighted_imbalance'), metrics['bid_volume'], metrics['ask_volume'],
@@ -338,10 +355,11 @@ class DatabaseClient:
             'total_volume', 'sample_count', 'window_velocity'
         ]
 
-        await self._bulk_insert_records(table_name='orderbook_metrics_windowed',
-                                        columns=columns,
-                                        records=records,
-                                        on_conflict_clause='ON CONFLICT (time, symbol, window_type) DO NOTHING')
+        await self._bulk_insert_records(
+            table_name='orderbook_metrics_windowed',
+            columns=columns,
+            records=records,
+            on_conflict_clause='ON CONFLICT (time, symbol, window_type) DO NOTHING')
 
         logger.debug(f"Inserted batch of {len(validated_windowed)} windowed metrics")
 
@@ -492,7 +510,7 @@ class DatabaseClient:
                     COUNT(*) as sample_count
                 FROM orderbook_metrics
                 WHERE symbol = $1
-                    AND time >= NOW() - ($2::text || ' hours')::interval
+                    AND time >= NOW() - ($2 * INTERVAL '1 hour')
             """, symbol, hours)
             # AND time >= NOW() - INTERVAL '$2 hours'
 
