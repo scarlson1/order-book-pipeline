@@ -56,14 +56,45 @@ variable "cockroach_delete_protection" {
 }
 
 # Upstash
-variable "upstash_email" { type = string }
-variable "upstash_api_key" {
+# variable "upstash_email" { type = string }
+# variable "upstash_api_key" {
+#   type      = string
+#   sensitive = true
+# }
+# variable "upstash_region" {
+#   type    = string
+#   default = "us-central1"
+# }
+
+# Redis Cloud
+variable "redis_cloud_api_key" {
   type      = string
   sensitive = true
 }
-variable "upstash_region" {
+
+variable "redis_cloud_secret_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "redis_cloud_region" {
   type    = string
-  default = "us-central1"
+  default = "us-east-1"
+}
+
+variable "redis_cloud_provider" {
+  type    = string
+  default = "AWS"
+}
+
+variable "redis_cloud_memory_mb" {
+  type    = number
+  default = 30
+}
+
+variable "redis_cloud_password" {
+  type      = string
+  sensitive = true
 }
 
 # Redpanda Cloud

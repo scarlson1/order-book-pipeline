@@ -10,9 +10,13 @@ terraform {
       source  = "cockroachdb/cockroach"
       version = "~> 1.17"
     }
-    upstash = {
-      source  = "upstash/upstash"
-      version = ">= 1.0.0, < 2.0.0"
+    # upstash = {
+    #   source  = "upstash/upstash"
+    #   version = ">= 1.0.0, < 2.0.0"
+    # }
+    rediscloud = {
+      source  = "RedisLabs/rediscloud"
+      version = "~> 1.7"
     }
     redpanda = {
       source  = "redpanda-data/redpanda"

@@ -10,9 +10,14 @@ provider "cockroach" {
   apikey = var.cockroach_api_key
 }
 
-provider "upstash" {
-  email   = var.upstash_email
-  api_key = var.upstash_api_key
+# provider "upstash" {
+#   email   = var.upstash_email
+#   api_key = var.upstash_api_key
+# }
+
+provider "rediscloud" {
+  api_key    = var.redis_cloud_api_key
+  secret_key = var.redis_cloud_secret_key
 }
 
 provider "redpanda" {

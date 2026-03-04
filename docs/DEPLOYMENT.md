@@ -323,6 +323,8 @@ Required GitHub secrets:
 
 - `OCI_VM_USER`
 - `OCI_VM_SSH_KEY`
+- `REDIS_CLOUD_API_KEY` (access api key)
+- `REDIS_CLOUD_SECRET_KEY` (user api key)
 
 Required GitHub variable or secret:
 
