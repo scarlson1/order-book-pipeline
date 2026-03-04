@@ -176,7 +176,7 @@ class WindowAggFunction(AggregateFunction):
 class WindowMetadataFunction(ProcessWindowFunction):
     """Enriches aggregate result with actual Flink window boundaries."""
     
-    def process(self, key, context, elements, out):
+    def process(self, key, context, elements):
         # elements contains the single result from AggregateFunction
         result = list(elements)[0]
         window: TimeWindow = context.window()
