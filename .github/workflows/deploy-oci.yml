@@ -123,7 +123,7 @@ jobs:
             ENVIRONMENT=${ENVIRONMENT}
             EOF
 
-            docker compose -f compose.oci.yml --env-file .env.oci run --rm db-migrate
+            docker compose -f compose.oci.yml --env-file .env.oci run --profile migrate --rm db-migrate
             docker compose -f compose.oci.yml --env-file .env.oci up -d --build ingestion consumers
             docker compose -f compose.oci.yml --env-file .env.oci up -d --build --force-recreate flink-jobmanager flink-taskmanager
             docker compose -f compose.oci.yml --env-file .env.oci run --rm flink-job-submitter
