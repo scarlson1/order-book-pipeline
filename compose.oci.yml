@@ -19,6 +19,8 @@ services:
       - ./db/migrations:/db/migrations:ro
     command: ['--migrations-dir', '/db/migrations', 'up']
     restart: 'no'
+    profiles:
+      - migrate
 
   consumers:
     build:
