@@ -33,7 +33,7 @@ module "cockroach" {
 module "redis_cloud" {
   source = "../../modules/redis_cloud"
 
-  subscription_name = "${var.project_name}-sub"
+  # subscription_name = "${var.project_name}-sub"
   database_name     = "${var.project_name}-redis"
   region            = var.redis_cloud_region
   cloud_provider    = var.redis_cloud_provider
