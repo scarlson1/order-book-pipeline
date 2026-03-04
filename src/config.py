@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     redis_password: str | None = None
     redis_ssl: bool = False
     redis_username: str = "default"
-    redis_db: int = 0
+    redis_db: int | str = 0
     redis_snapshot_min_write_interval_seconds: int = 60
     redis_url_env: str | None = Field(
         default=None,
