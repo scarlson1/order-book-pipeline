@@ -34,15 +34,31 @@ output "cockroach_default_sslmode" {
   value = "require"
 }
 
-output "upstash_redis_endpoint" {
-  value = module.upstash.endpoint
+# output "upstash_redis_endpoint" {
+#   value = module.upstash.endpoint
+# }
+
+# output "upstash_redis_port" {
+#   value = module.upstash.port
+# }
+
+# output "upstash_redis_tls" {
+#   value = true
+# }
+
+output "redis_cloud_endpoint" {
+  value = module.redis_cloud.endpoint
 }
 
-output "upstash_redis_port" {
-  value = module.upstash.port
+output "redis_cloud_host" {
+  value = module.redis_cloud.host
 }
 
-output "upstash_redis_tls" {
+output "redis_cloud_port" {
+  value = module.redis_cloud.port
+}
+
+output "redis_cloud_tls" {
   value = true
 }
 

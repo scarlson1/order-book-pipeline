@@ -22,12 +22,24 @@ module "cockroach" {
   delete_protection = var.cockroach_delete_protection
 }
 
-module "upstash" {
-  source = "../../modules/upstash"
+# module "upstash" {
+#   source = "../../modules/upstash"
 
-  database_name = "${var.project_name}-redis"
-  region        = var.upstash_region
-  tls           = true
+#   database_name = "${var.project_name}-redis"
+#   region        = var.upstash_region
+#   tls           = true
+# }
+
+module "redis_cloud" {
+  source = "../../modules/redis_cloud"
+
+  subscription_name = "${var.project_name}-sub"
+  database_name     = "${var.project_name}-redis"
+  region            = var.redis_cloud_region
+  cloud_provider    = var.redis_cloud_provider
+  memory_limit_mb   = var.redis_cloud_memory_mb
+  password          = var.redis_cloud_password
+  tls               = true
 }
 
 module "redpanda" {
