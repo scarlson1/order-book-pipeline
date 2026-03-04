@@ -19,6 +19,12 @@ upstash_email   = "you@example.com"
 upstash_api_key = "..."
 upstash_region  = "us-east-1"
 
+redis_cloud_api_key    = "your-redis-cloud-api-key"     # from Redis Cloud console → Account Settings → API Keys
+redis_cloud_secret_key = "your-redis-cloud-secret-key"
+redis_cloud_region     = "us-central1"
+redis_cloud_provider   = "GCP"
+redis_cloud_password   = "your-database-password"
+
 enable_redpanda            = true
 redpanda_client_id          = "..."
 redpanda_client_secret      = "..."

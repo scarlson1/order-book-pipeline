@@ -5,7 +5,7 @@
 #   - 5m Sliding windows (every 1m)
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.common.watermark_strategy import WatermarkStrategy
