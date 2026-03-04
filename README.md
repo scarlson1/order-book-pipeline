@@ -1,6 +1,12 @@
-# Real-Time Order Book Imbalance Monitor
+# Real-Time Order Book Monitor
 
-A production-ready streaming data pipeline that monitors order book imbalances in real-time from cryptocurrency exchanges.
+A streaming data pipeline that monitors order book imbalances in real-time from exchanges.
+
+## (contrived) Problem
+
+Market participants benefit from having real time data and analysis in order to make trading decisions. Orderbook data can be informative of short term market dynamics, providing insight into market liquidity, supply/demand imbalances, and potential price movements.
+
+This project processes orderbook data to produce realtime metrics and alerts. It takes orderbook data from a Binance websocket, calculates metrics, windowed data and real-time alerts, and presents the data in a Streamlit dashboard.
 
 ## Architecture
 
@@ -20,7 +26,7 @@ Apache Flink                    ← Stream processing
 Redpanda (orderbook.metrics / orderbook.alerts)
       ↓
   Consumers
-  ├── TimescaleDB               ← Persistent storage
+  ├── CockroachDB               ← Persistent storage
   ├── Redis                     ← Low-latency cache
       ↓
   └── Streamlit Dashboard       ← Visualization (reads from DB/redis)
@@ -35,9 +41,8 @@ Redpanda (orderbook.metrics / orderbook.alerts)
 - **Time-series storage** with TimescaleDB for historical analysis
 - **Redis caching** for ultra-low latency reads
 - **Interactive dashboard** with Streamlit
-- **Grafana integration** for advanced visualization (optional)
 
-## Quick Start
+## Quick Start (local docker compose)
 
 ### Prerequisites
 
@@ -63,6 +68,9 @@ mkdir -p logs
 # Start everything
 docker-compose up -d
 
+# if flink jobs don't show up - optionally run flink-job-submitter
+# docker compose up -d --force-recreate flink-job-submitter
+
 # View logs
 docker-compose logs -f
 
@@ -70,17 +78,19 @@ docker-compose logs -f
 docker-compose ps
 ```
 
+## Docker Compose Profiles
+
+The docker-compose.yml uses profiles to optionally enable additional services:
+
+- **Default** (no profile): Core services only (DB, Redis, Ingestion, RedPanda, Flink, Dashboard)
+<!-- - **with-grafana**: Adds Grafana for advanced visualization -->
+- **with-pgadmin**: Adds pgAdmin for database management
+
 ### Optional Services
 
 ```bash
-# Start with Grafana
-docker-compose --profile with-grafana up -d
-
 # Start with pgAdmin (database management)
 docker-compose --profile with-pgadmin up -d
-
-# Start everything
-docker-compose --profile with-grafana --profile with-pgadmin up -d
 ```
 
 ### Access the Dashboard
@@ -91,45 +101,34 @@ Open your browser to:
 - **Flink Dashboard**: http://localhost:8081
 - **RedPanda Dashboard**: http://localhost:8080/overview
 - **pgAdmin** (optional): http://localhost:5050 (admin@orderbook.com/admin)
-- **Grafana** (optional): http://localhost:3000 (admin/admin)
-
-## Docker Compose Profiles
-
-The docker-compose.yml uses profiles to optionally enable additional services:
-
-- **Default** (no profile): Core services only (TimescaleDB, Redis, Ingestion, RedPanda, Flink, Dashboard)
-- **with-grafana**: Adds Grafana for advanced visualization
-- **with-pgadmin**: Adds pgAdmin for database management
-
-**Why Redpanda?**
-
-- **Simpler**: No Zookeeper needed - single binary deployment
-- **Faster**: Written in C++ for 10x better performance vs Kafka
-- **Lighter**: Uses less memory and CPU (~1GB vs ~4GB for Kafka+Zookeeper)
-- **Compatible**: Drop-in Kafka replacement - use existing Kafka clients
-- **Better DX**: Built-in web console and rpk CLI tool
-- **Production-ready**: Powers real-time data pipelines at scale
-
-**Use Cases:**
-
-- Enable multiple consumers (dashboard, alerts, analytics)
-- Replay historical events for debugging
-- Scale horizontally with partitioning
-- Decouple ingestion from processing
+<!-- - **Grafana** (optional): http://localhost:3000 (admin/admin) -->
 
 ## Configuration
 
 Edit `.env` to customize:
 
-### Symbols to Monitor
+### Symbols to Monitor & Data Feed Env Vars
 
 > Note: `SYMBOLS` and `UPDATE_SPEED` have significant impact on resources (DB storage, Flink VM)
 
 ```bash
 SYMBOLS=BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT
+DEPTH_LEVELS=20            # Fetch 20 levels from exchange
+UPDATE_SPEED=100ms
+
+# Metric Calculation Settings
+CALCULATE_DEPTH=10         # Use top 10 levels for calculations
+ROLLING_WINDOW_SECONDS=60
+CALCULATE_VELOCITY=true
+
+# Alert Thresholds
+ALERT_THRESHOLD_HIGH=0.70  # 70% imbalance
+ALERT_THRESHOLD_MEDIUM=0.50
+SPREAD_ALERT_MULTIPLIER=2.0 # Alert when spread 2x normal
+VELOCITY_THRESHOLD=0.05    # rapid changes
 ```
 
-### Stream Rate & Downsampling
+<!-- ### Stream Rate & Downsampling
 
 There are a couple options to adjust the stream rate, which have a large impact on database size. The default 100ms rate results in 10 datapoints/symbol/second. With 3 symbols, that's ~2GB/day. There are two options to aggregate/reduce the rate:
 
@@ -188,7 +187,7 @@ DOWNSAMPLE_PUBLISH_TO_REDIS=false
 
 - 1 metric per symbol per 5 minutes
 - ~0.5 MB/day for 10 symbols
-- Use: Many symbols, minimal storage
+- Use: Many symbols, minimal storage -->
 
 **Storage Calculations**
 
@@ -204,7 +203,7 @@ UPDATE_SPEED=1000ms
 ├─ 10GB limit: 77 days ✓
 └─ Trade-off: 10x slower updates
 
-Downsampling Only (60s bucket)
+<!-- Downsampling Only (60s bucket)
 ├─ Metrics/day: 4,320 (1 per symbol per 60s)
 ├─ Daily storage: 8.6 MB
 ├─ 10GB limit: 1,162 days (3.2 years) ✓✓
@@ -213,9 +212,9 @@ Downsampling Only (60s bucket)
 UPDATE_SPEED=1000ms + Downsampling
 ├─ Raw + metrics: 140 MB/day
 ├─ 10GB limit: 71 days ✓
-└─ Trade-off: Complexity, still limited
+└─ Trade-off: Complexity, still limited -->
 
-**Data shapes**
+<!-- **Data shapes**
 
 Raw Tick (OrderBookSnapshot → Redpanda)
 ├─ Structure: [[bid_price, qty], [ask_price, qty], ...]
@@ -237,111 +236,156 @@ Downsampled Metric (DownsampledMetric → Redis/DB)
 ├─ Frequency: 1 per 60 seconds per symbol
 ├─ Fields: mean/min/max/std of imbalance, spread, OHLC, etc.
 ├─ Table: orderbook_metrics_downsampled (NEW)
-└─ Contains: 600 ticks summarized in 1 row
-
-### Alert Thresholds
-
-```bash
-ALERT_THRESHOLD_HIGH=0.70    # 70% imbalance triggers alert
-ALERT_THRESHOLD_MEDIUM=0.50  # 50% imbalance warning
-SPREAD_ALERT_MULTIPLIER=2.0  # Alert when spread 2x normal
-```
-
-### Calculation Depth
-
-```bash
-CALCULATE_DEPTH=10  # Use top 10 levels for calculations
-DEPTH_LEVELS=20     # Fetch 20 levels from exchange
-```
+└─ Contains: 600 ticks summarized in 1 row -->
 
 ## Project Structure
 
 ```
 .
-├── docker-compose.yml          # Main orchestration file
-├── init-db.sql                 # Database schema
-├── requirements.txt            # Python dependencies
-├── .env.example               # Environment template
-├── Dockerfile.ingestion       # Ingestion service image
-├── Dockerfile.dashboard       # Dashboard service image
-├── src/
-│   ├── ingestion/
-│   │   ├── main.py           # Main ingestion script
-│   │   ├── websocket_client.py
-│   │   ├── metrics_calculator.py
-│   │   └── alert_engine.py
-│   ├── common/
-│   │   ├── database.py       # Database connection
-│   │   ├── redis_client.py   # Redis client
-│   │   └── models.py         # Data models
-│   ├── jobs/                 # Flink jobs
-│   │   ├── orderbook_metrics.py       # Database connection
-│   │   ├── redis_client.py   # Redis client
-│   ├── producers/            # Flink producers
-│   └── config.py             # Configuration loader
-├── dashboard/
-│   └── app.py                # Streamlit dashboard
-├── grafana/
-│   ├── datasources/          # Grafana datasources
-│   └── dashboards/           # Dashboard definitions
-└── logs/                     # Application logs
+├── compose.oci.yml                          # Oracle VM deployment (consumers, flink, ingestion)
+├── dashboard                                # Streamlit
+│   ├── app.py
+│   ├── components
+│   │   ├── alert_feed.py
+│   │   ├── gauge.py
+│   │   ├── imbalance_trend.py
+│   │   ├── metrics_cards.py
+│   │   ├── multi_metric_windows.py
+│   │   ├── orderbook_viz.py
+│   │   ├── services_health_status.py
+│   │   ├── timeseries.py
+│   │   ├── volatility_heatmap.py
+│   │   ├── windowed_aggregates.py
+│   │   └── windowed_statistics.py
+│   ├── data
+│   │   ├── data_layer.py
+│   │   ├── db_queries.py
+│   │   ├── flink_queries.py
+│   │   ├── redis_queries.py
+│   │   └── redpanda_queries.py
+│   ├── images
+│   ├── pages
+│   └── utils
+│       ├── async_runner.py
+│       ├── charts.py
+│       └── formatting.py
+├── db                                       # dbmate SQL schema management
+│   ├── migrations
+│   │   ├── 20260301000100_baseline_schema.sql
+│   │   ├── 20260301000200_retention_ttl.sql
+│   │   └── 20260302000100_add_avg_mid_price_windowed.sql
+│   └── schema.sql
+├── docker-compose.yml                       # run locally
+├── Dockerfile.consumers
+├── Dockerfile.dashboard
+├── Dockerfile.flink
+├── Dockerfile.ingestion
+├── docs
+│   ├── API.md
+│   ├── ARCHITECTURE.md
+│   ├── DEPLOYMENT.md
+│   ├── DEVELOPMENT.md
+│   ├── FLINK.md
+│   ├── images
+│   ├── METRICS.md
+│   ├── REDPANDA.md
+│   └── TROUBLESHOOTING.md
+├── init-db.sql (deprecated - use dbmate)
+├── justfile
+├── LICENSE
+├── logs
+│   └── orderbook.log
+├── Makefile
+├── pyproject.toml
+├── QUICKSTART.md
+├── README.md
+├── requirements-flink.txt
+├── requirements.txt
+├── src
+│   ├── common
+│   │   ├── database.py                      # SQL DB client
+│   │   ├── models.py                        # pydantic models
+│   │   ├── redis_client.py                  # Redis Client
+│   │   ├── redpanda_client.py               # RedpandaConsumer & RedpandaProducer classes
+│   │   └── utils.py
+│   ├── config.py                            # environment variables & validation
+│   ├── consumers
+│   │   ├── db_consumer.py                   # Flink topics --> Database
+│   │   ├── main.py
+│   │   └── redis_consumer.py                # Flink topics --> Redis
+│   ├── ingestion
+│   │   ├── main.py
+│   │   ├── metrics_calculator.py            # calc imbalance, volume, etc.
+│   │   ├── orderbook_parser.py              #
+│   │   └── websocket_client.py              # Binance websocket client
+│   └── jobs
+│       ├── orderbook_alerts.py              # Flink job: detect/generate alerts (metrics -> alerts)
+│       ├── orderbook_metrics.py             # Flink job: raw -> metrics
+│       ├── orderbook_windows.py             # Flink job: metrics -> windowed
+├── terraform
+│   ├── envs
+│   │   └── prod
+│   │       ├── backend.hcl
+│   │       ├── backend.oci.hcl.example
+│   │       ├── backend.tf
+│   │       ├── main.tf
+│   │       ├── outputs.tf
+│   │       ├── providers.tf
+│   │       ├── terraform.tfstate
+│   │       ├── terraform.tfstate.backup
+│   │       ├── terraform.tfvars
+│   │       ├── terraform.tfvars.example
+│   │       ├── tfplan
+│   │       ├── tfplan-oci
+│   │       ├── variables.tf
+│   │       └── versions.tf
+│   └── modules
+│       ├── cockroach
+│       │   ├── main.tf
+│       │   ├── outputs.tf
+│       │   └── variables.tf
+│       ├── oci_vm
+│       │   ├── cloud-init.yaml
+│       │   ├── main.tf
+│       │   ├── outputs.tf
+│       │   └── variables.tf
+│       ├── redis_cloud
+│       │   ├── main.tf
+│       │   ├── outputs.tf
+│       │   └── variables.tf
+│       ├── redpanda
+│       │   ├── main.tf
+│       │   ├── outputs.tf
+│       │   └── variables.tf
+│       └── upstash
+│           ├── main.tf
+│           ├── outputs.tf
+│           └── variables.tf
+├── tests
+│   ├── e2e
+│   │   └── test_full_pipeline.py
+│   ├── fixtures
+│   │   └── orderbook_snapshot.json
+│   ├── integration
+│   │   ├── test_database.py
+│   │   ├── test_db_consumer.py
+│   │   ├── test_flink_pipeline.py
+│   │   ├── test_ingestion_pipeline.py
+│   │   ├── test_redis_consumer.py
+│   │   ├── test_redis.py
+│   │   ├── test_redpanda.py
+│   │   └── test_websocket.py
+│   └── unit
+│       ├── test_alert_engine.py
+│       ├── test_ingestion_main.py
+│       ├── test_metrics_calculator.py
+│       ├── test_models.py
+│       ├── test_redis_consumer.py
+│       └── tests_orderbook_parser.py
+└── uv.lock
 ```
 
-**End-to-end flow (where the data lives at each step)**
-
-1. **Binance WebSocket (external source)**
-   - **Location in code:** [`src/ingestion/websocket_client.py`](src/ingestion/websocket_client.py)
-   - **Entry point:** `BinanceWebSocketClient.start()` → `_connect_symbol()` → `_handle_message()`
-   - **Data shape:** raw JSON string → parsed dict, expected keys include `bids`/`asks` for partial book depth (see inline docstring in `BinanceWebSocketClient`).
-   - **What happens:** `_handle_message()` does `json.loads(...)` and calls the callback with `(symbol, data)`.
-
-2. **Ingestion Service callback**
-   - **Location in code:** [`src/ingestion/main.py`](src/ingestion/main.py)
-   - **Function:** `IngestionService.handle_orderbook(symbol, raw_data)`
-   - **Data shape:** `raw_data` is a dict from Binance; `symbol` is the trading symbol string.
-
-3. **Parsing + validation**
-   - **Location in code:** [`src/ingestion/orderbook_parser.py`](src/ingestion/orderbook_parser.py)
-   - **Function:** `OrderBookParser.parse(symbol, raw)`
-   - **Data shape in:** raw Binance dict
-   - **Data shape out:** `OrderBookSnapshot` model (or `None` if invalid)
-   - **Model definition:** `OrderBookSnapshot` in `src/common/models.py`
-   - **What happens:** converts price/volume to floats, sorts bids/asks, filters invalid levels, builds a typed snapshot.
-
-4. **Enrichment + publish to Redpanda**
-   - **Location in code:** [`src/ingestion/main.py`](src/ingestion/main.py)
-   - **Function:** `IngestionService.handle_orderbook(...)`
-   - **Data shape:** `snapshot.model_dump()` merged with:
-     - `ingested_at` (ISO timestamp)
-     - `source` = `"binance_websocket"`
-   - **Topic name:** `settings.redpanda_topics["raw"]` from `src/config.py`
-   - **Publisher:** `RedpandaProducer.publish(...)` in `src/common/redpanda_client.py`
-
-5. **Redpanda topic: `orderbook.raw`**
-   - **Location in code:** config in [`src/config.py`](src/config.py) (`settings.redpanda_topics`)
-   - **Runtime storage:** Redpanda broker (external)
-   - **Message schema:** dict with keys like `timestamp`, `symbol`, `bids`, `asks`, `update_id`, `ingested_at`, `source`.
-   - **Validated by:** `OrderBookSnapshot` in [`src/common/models.py`](src/common/models.py) before publish.
-
-6. **Flink (downstream processing)**
-   - **Intended flow:** Flink consumes `orderbook.raw`, calculates metrics/alerts, produces to:
-     - `settings.redpanda_topics["metrics"]`
-     - `settings.redpanda_topics["alerts"]`
-
-7. **Persistence layer (TimescaleDB / Redis)**
-   - **Database client:** [`src/common/database.py`](src/common/database.py)
-   - **Functions:** `insert_metrics(...)`, `insert_alert(...)`
-   - **Expected data shape:** matches `OrderBookMetrics` and `Alert` in [`src/common/models.py`](src/common/models.py).
-
 ---
-
-## TODO:
-
-2. **Dashboard** (`dashboard/`)
-   - Streamlit app with visualizations
-   - Real-time metric display
-   - Alert feed
-   - Historical analysis
 
 ## Useful Commands
 
@@ -416,7 +460,7 @@ docker-compose logs -f
 
 ```bash
 # Check if ports are already in use
-lsof -i :5432  # TimescaleDB
+lsof -i :26258  # CockroachDB
 lsof -i :6379  # Redis
 lsof -i :8501  # Streamlit
 
@@ -455,222 +499,35 @@ docker-compose logs dashboard
 docker-compose up -d --build dashboard
 ```
 
-## Performance Tuning
+## Local Development
 
-### For High-Throughput Scenarios
-
-1. **Increase PostgreSQL connection pool**:
-   Edit `docker-compose.yml` and add to timescaledb environment:
-
-   ```yaml
-   POSTGRES_MAX_CONNECTIONS: 200
-   ```
-
-2. **Optimize TimescaleDB**:
-
-   ```sql
-   -- Increase chunk interval
-   SELECT set_chunk_time_interval('orderbook_metrics', INTERVAL '1 day');
-
-   -- Enable compression
-   ALTER TABLE orderbook_metrics SET (
-       timescaledb.compress,
-       timescaledb.compress_segmentby = 'symbol'
-   );
-   ```
-
-## Production Considerations
-
-Before deploying to production:
-
-1. **Security**:
-   - Change default passwords in `.env`
-   - Use secrets management (Docker secrets, Vault)
-   - Enable SSL/TLS for all connections
-   - Restrict network access with firewall rules
-
-2. **Monitoring**:
-   - Add Prometheus metrics
-   - Set up alerting (PagerDuty, Slack)
-   - Monitor container health
-   - Track database performance
-
-3. **Scaling**:
-   - Use Redpanda for multi-consumer pattern
-   - Scale ingestion service horizontally
-   - Set up TimescaleDB replication
-   - Use Redis Cluster for high availability
-
-4. **Data Retention**:
-   - Enable automatic data cleanup in `init-db.sql`
-   - Compress older data
-   - Archive to S3/object storage
-   - Connect rocksDB to external storage (S3, GCS)
-
-## License
-
-MIT License - feel free to use for your personal or commercial projects.
-
-## Local Development with uv
-
-For local development outside Docker, you can use uv for extremely fast dependency installation:
-
-```bash
-# Install uv (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Create virtual environment and install dependencies
-uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install all dependencies (10-100x faster than pip!)
-uv pip install -e ".[dev]"
-
-# Or install from requirements.txt
-uv pip install -r requirements.txt
-
-# Install with Redpanda support
-uv pip install -e ".[redpanda,dev]"
-
-# Run tests
-pytest
-
-# Format code
-black src/ dashboard/ tests/
-ruff check src/ dashboard/ tests/
-```
-
-## Flink Connectors
-
-**Required connectors:**
-
-- Flink Kafka connector: `flink-connector-kafka-1.18.0.jar`
-- Kafka Clients Library (dependency) - `kafka-clients-3.2.3.jar`
--
-
-### Installation options
-
-**Option 1: download \* mount**
-
-- update `docker-compose.yml` with volume mount to locally installed connector directory
-- use setup script to download
-
-```bash
-#!/bin/bash
-# Download Flink Kafka connector JARs
-#
-# These JARs are required for Flink to read/write from Redpanda.
-# Run this once before starting Flink services.
-
-set -e  # Exit on error
-
-FLINK_VERSION="1.18.0"
-KAFKA_VERSION="3.2.3"
-SCALA_VERSION="2.12"
-
-FLINK_LIB_DIR="./flink/lib"
-
-echo "======================================"
-echo "Downloading Flink Kafka Connector JARs"
-echo "======================================"
-
-# Create lib directory
-mkdir -p "$FLINK_LIB_DIR"
-
-# Flink Kafka Connector
-KAFKA_CONNECTOR_JAR="flink-sql-connector-kafka-${FLINK_VERSION}.jar"
-KAFKA_CONNECTOR_URL="https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/${FLINK_VERSION}/${KAFKA_CONNECTOR_JAR}"
-
-if [ -f "$FLINK_LIB_DIR/$KAFKA_CONNECTOR_JAR" ]; then
-    echo "✓ $KAFKA_CONNECTOR_JAR already exists"
-else
-    echo "Downloading $KAFKA_CONNECTOR_JAR..."
-    curl -L -o "$FLINK_LIB_DIR/$KAFKA_CONNECTOR_JAR" "$KAFKA_CONNECTOR_URL"
-    echo "✓ Downloaded $KAFKA_CONNECTOR_JAR"
-fi
-
-# Kafka Clients (dependency)
-KAFKA_CLIENTS_JAR="kafka-clients-${KAFKA_VERSION}.jar"
-KAFKA_CLIENTS_URL="https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/${KAFKA_VERSION}/${KAFKA_CLIENTS_JAR}"
-
-if [ -f "$FLINK_LIB_DIR/$KAFKA_CLIENTS_JAR" ]; then
-    echo "✓ $KAFKA_CLIENTS_JAR already exists"
-else
-    echo "Downloading $KAFKA_CLIENTS_JAR..."
-    curl -L -o "$FLINK_LIB_DIR/$KAFKA_CLIENTS_JAR" "$KAFKA_CLIENTS_URL"
-    echo "✓ Downloaded $KAFKA_CLIENTS_JAR"
-fi
-
-echo ""
-echo "======================================"
-echo "✓ All Flink connector JARs downloaded"
-echo "======================================"
-echo ""
-echo "Files in $FLINK_LIB_DIR:"
-ls -lh "$FLINK_LIB_DIR"
-echo ""
-echo "You can now start Flink:"
-echo "  docker compose up -d"
-```
-
-```bash
-# Make script executable
-chmod +x flink/download-jars.sh
-
-# Download JARs (one-time setup)
-make flink-jars
-
-# Or run directly:
-./flink/download-jars.sh
-```
-
-```yaml
-# docker-compose.yml
-flink-jobmanager:
-  volumes:
-    - ./flink/lib:/opt/flink/lib # ← Local JARs mounted to Flink's lib
-```
-
-**Option 2: Dockerfile**
-
-See `Dockerfile.flink` - this is the current implimentation.
-
-- `Dockerfile.flink` to build custom image that downloads the connectors
-- results in larger docker image, but easier to maintain / removes dev setup step
+See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for details
 
 ## Deployment
 
-TODO: deployment docs
+See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for details
+
+[Deployed Dashboard](https://order-book-pipeline.streamlit.app/)
 
 Free tier services:
 
-| Local Container | Production                 | Type           |
-| --------------- | -------------------------- | -------------- |
-| timescaledb     | CockroachDB Serverless     | Managed DB     |
-| redis           | Upstash Redis              | Managed cache  |
-| redpanda        | Upstash Kafka (deprecated) | Managed broker |
-| ingestion       | Render Web Service         | Python app     |
-| consumers       | Render Worker              | Python app     |
-| flink           | GCP Dataflow OR remove     | Complex JVM    |
-| dashboard       | Streamlit Cloud            | Python app     |
-| grafana/pgadmin | DELETE                     | Dev tools only |
+| Local Container | Production             |
+| --------------- | ---------------------- |
+| timescaledb     | CockroachDB Serverless |
+| redis           | Redis Cloud            |
+| redpanda        | Redpanda Serverless    |
+| ingestion       | Oracle VM              |
+| consumers       | Oracle VM              |
+| flink           | Oracle VM              |
+| dashboard       | Streamlit Cloud        |
 
-- DB: CockroachDB or Supabase
-- Redis: Upstash Redis
-- Redpanda: Aiven Kafka Free (replace Upstash Kafka) [redpanda serverless available](https://www.redpanda.com/try-data-streaming) ?? (or small GCP VM self-hosted)
-- Ingestion: ??
-- Consumers: ??
-- Flink: ??
-- Dashboard: Streamlit
-
-Note on TimescaleDB:
-
-- See feature [comparison between TimescaleDB licenses](https://www.tigerdata.com/docs/about/latest/timescaledb-editions)
-- Not currently using any TimescaleDB features not included in the Apache license
-- Easy to convert current code
-  - `time_bucket('1 hour', ts)` -> `DATE_TRUNC('hour', ts)`, etc.
-  - Remove `CREATE HYPERTABLE` calls
-  - Remove compression settings
+- DB: [CockroachDB](https://www.cockroachlabs.com/)
+- Redis: [Redis Cloud](https://cloud.redis.io/) ([Upstash Redis](https://upstash.com/) also has decent free tier)
+- Redpanda: [redpanda serverless available](https://www.redpanda.com/try-data-streaming) (or small GCP VM self-hosted)
+- Ingestion: Cloud VM
+- Consumers: Cloud VM
+- Flink: Cloud VM
+- Dashboard: [Streamlit](https://streamlit.io/)
 
 ## Potential Features Roadmap
 
@@ -707,7 +564,7 @@ Note on TimescaleDB:
 
 ## Contributing
 
-This is a portfolio project, but suggestions and improvements are welcome!
+This is a simple portfolio project, but suggestions and improvements are welcome!
 
 ## Support
 
