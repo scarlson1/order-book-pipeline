@@ -53,12 +53,13 @@ def _create_volatility_chart(df, symbol: str, timezone_pref: str = 'America/New_
 def render_volatility_heatmap(symbol: str, timezone_pref: str = 'America/New_York', days: int = 7, refresh_rate: int = 300000):
     st_autorefresh(interval=refresh_rate, key="data_vol_heatmap_refresh")
 
-    days_input = st.selectbox(
-        "Last Days",
-        (7, 14, 30),
-        index=0 if days == 7 else 1 if days == 14 else 2 if days == 30 else 0,
-        width=120
-    )
+    # days_input = st.selectbox(
+    #     "Last Days",
+    #     (7, 14, 30),
+    #     index=0 if days == 7 else 1 if days == 14 else 2 if days == 30 else 0,
+    #     width=120
+    # )
+    days_input = days
 
     rows = _get_volatility_data(symbol, timezone_pref, days_input)
     print(f'ROWS: {rows[:1]}')
