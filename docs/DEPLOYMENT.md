@@ -2,11 +2,11 @@
 
 This guide deploys the app using:
 
-- CockroachDB (SQL)
-- Upstash Redis (cache)
-- Redpanda Serverless (Kafka-compatible broker)
-- OCI VM (ingestion + consumers + Flink)
-- Streamlit Community Cloud (dashboard)
+- [CockroachDB](https://www.cockroachlabs.com/)(SQL)
+- [Redis Cloud](https://cloud.redis.io/) (cache)
+- [Redpanda Serverless](https://www.redpanda.com/try-data-streaming) (Kafka-compatible broker)
+- [OCI VM](https://www.oracle.com/cloud/) (ingestion + consumers + Flink)
+- [Streamlit Community Cloud](https://streamlit.io/) (dashboard)
 
 ## Architecture
 
@@ -31,15 +31,15 @@ flowchart LR
 | Consumers                              | OCI VM (`compose.oci.yml`) |
 | Flink JobManager/TaskManager/Submitter | OCI VM (`compose.oci.yml`) |
 | SQL database                           | CockroachDB                |
-| Redis cache                            | Upstash Redis              |
+| Redis cache                            | Redis Cloud                |
 | Kafka broker                           | Redpanda Serverless        |
 | Dashboard                              | Streamlit Community Cloud  |
 
 ## Prerequisites
 
-1. Accounts: OCI, CockroachDB, Upstash, Redpanda Cloud, GitHub, Streamlit Cloud.
-2. Local tools: `terraform`, `git`, `ssh`.
-   - `docker compose` (for runtime + migration hook)
+1. Accounts: OCI, CockroachDB, Redis, Redpanda Cloud, GitHub, Streamlit Cloud.
+2. Local tools: `terraform`, `git`, `ssh`, `dbmate`.
+   - `docker compose`
    - Optional: `dbmate` CLI (for local/manual migration status checks)
 3. Repo files already present:
    - `terraform/envs/prod/*`
@@ -51,6 +51,11 @@ flowchart LR
    - `.github/workflows/infra-apply.yml` (disabled stub)
    - `.github/workflows/deploy-oci.yml`
 
+> Steps below are for manual deployment. See the following github actions for automated deployment
+> [deploy-oci.yml](.github/workflows/deploy-oci.yml)
+> [infra-apply-oci.yml](.github/workflows/infra-apply-oci.yml)
+> [infra-apply.yml](.github/workflows/infra-apply.yml)
+
 ## Step 1: Create Managed Services
 
 1. CockroachDB
@@ -58,11 +63,13 @@ flowchart LR
    - Create SQL user + password.
    - Capture host, port (`26257`), db name, username, password.
 
-2. Upstash Redis
+2. Redis
    - Create Redis database.
    - Capture host, port, password.
+   - Access api key & user api key (secret)
 
 > **Note:** Upstash Redis monthly bandwidth limit is 50GB/mo.
+> **Note:** RedisCloud monthly bandwidth limit is 30GB/mo.
 
 3. Redpanda Serverless
    - Create resource group + serverless cluster.
@@ -116,6 +123,8 @@ dbmate --migrations-dir db/migrations status
 
 ## Step 4: Kafka Security Requirement (Flink)
 
+Code below is already added - just documenting for reference.
+
 Python producer/consumer supports SASL/TLS already.  
 Flink jobs must also set Kafka security properties for Redpanda Serverless.
 
@@ -153,25 +162,13 @@ If this step is skipped, Flink will fail to connect to Redpanda Serverless.
      - `enable_redpanda = false`
 4. Run:
 
+> Note: terraform is also executed in github action when merged to `main` branch
+
 ```bash
 terraform -chdir=terraform/envs/prod init -reconfigure -backend-config=backend.hcl
 terraform -chdir=terraform/envs/prod plan -var-file=terraform.tfvars -out=tfplan
 terraform -chdir=terraform/envs/prod apply tfplan
 terraform -chdir=terraform/envs/prod output
-```
-
-If `enable_redpanda = false`, target only non-Redpanda modules to avoid Redpanda
-destroy actions:
-
-```bash
-terraform -chdir=terraform/envs/prod plan \
-  -var-file=terraform.tfvars \
-  -target=module.oci_vm \
-  -target=module.cockroach \
-  -target=module.upstash \
-  -out=tfplan
-
-terraform -chdir=terraform/envs/prod apply tfplan
 ```
 
 If you already have local state and are switching to remote backend, run this once

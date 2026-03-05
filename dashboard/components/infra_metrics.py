@@ -1,0 +1,375 @@
+"""Infrastructure metrics panel - free tier usage & performance overview."""
+from __future__ import annotations
+
+import streamlit as st
+from streamlit_autorefresh import st_autorefresh
+
+from dashboard.utils.async_runner import run_async
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def _fmt_bytes(n: int | float | None, decimals: int = 2) -> str:
+    if n is None:
+        return "—"
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024:
+            return f"{n:.{decimals}f} {unit}"
+        n /= 1024
+    return f"{n:.{decimals}f} PB"
+
+
+def _pct_bar(used: float, total: float, label: str = "") -> None:
+    """Render a labelled progress bar showing used/total."""
+    if total <= 0:
+        st.caption("No quota data")
+        return
+    pct = min(used / total, 1.0)
+    color = "🟢" if pct < 0.7 else "🟡" if pct < 0.9 else "🔴"
+    st.progress(pct, text=f"{color} {label}  {_fmt_bytes(used)} / {_fmt_bytes(total)} ({pct*100:.1f}%)")
+
+
+# ── data fetchers ─────────────────────────────────────────────────────────────
+
+def _fetch_flink() -> dict:
+    data_layer = st.session_state.get("data_layer")
+    if data_layer is None:
+        return {}
+    try:
+        return run_async(data_layer.flink.health_check(), timeout=8) or {}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _fetch_redis_infra() -> dict:
+    data_layer = st.session_state.get("data_layer")
+    if data_layer is None:
+        return {}
+    try:
+        return run_async(_get_redis_infra(data_layer), timeout=8) or {}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def _get_redis_infra(data_layer) -> dict:
+    """Pull extended Redis INFO sections."""
+    client = data_layer.redis.redis.client
+    if client is None:
+        return {}
+    raw = await client.info("all")
+    return {
+        # memory
+        "used_memory": raw.get("used_memory"),
+        "used_memory_human": raw.get("used_memory_human"),
+        "used_memory_peak": raw.get("used_memory_peak"),
+        "used_memory_peak_human": raw.get("used_memory_peak_human"),
+        "maxmemory": raw.get("maxmemory"),
+        # network
+        "total_net_input_bytes": raw.get("total_net_input_bytes"),
+        "total_net_output_bytes": raw.get("total_net_output_bytes"),
+        # keyspace / ops
+        "total_commands_processed": raw.get("total_commands_processed"),
+        "instantaneous_ops_per_sec": raw.get("instantaneous_ops_per_sec"),
+        "keyspace_hits": raw.get("keyspace_hits"),
+        "keyspace_misses": raw.get("keyspace_misses"),
+        "connected_clients": raw.get("connected_clients"),
+        "uptime_in_seconds": raw.get("uptime_in_seconds"),
+        # db0 key count
+        "db0_keys": raw.get("db0", {}).get("keys") if isinstance(raw.get("db0"), dict) else None,
+    }
+
+
+def _fetch_cockroach() -> dict:
+    data_layer = st.session_state.get("data_layer")
+    if data_layer is None:
+        return {}
+    try:
+        return run_async(_get_cockroach_stats(data_layer), timeout=10) or {}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def _get_cockroach_stats(data_layer) -> dict:
+    """Query CockroachDB for storage and row counts."""
+    db = data_layer.db.db
+    if db.pool is None:
+        return {}
+    async with db.pool.acquire() as conn:
+        # estimated table sizes
+        rows = await conn.fetch(
+            """
+            SELECT
+                table_name,
+                range_size_mb
+            FROM [SHOW RANGES FROM DATABASE defaultdb WITH DETAILS]
+            LIMIT 20
+            """
+        )
+        table_sizes = {r["table_name"]: r["range_size_mb"] for r in rows} if rows else {}
+
+        # row counts
+        counts: dict = {}
+        for tbl in ("orderbook_metrics", "orderbook_alerts", "orderbook_metrics_windowed"):
+            try:
+                n = await conn.fetchval(f"SELECT count(*) FROM {tbl}")
+                counts[tbl] = n
+            except Exception:
+                counts[tbl] = None
+
+        # approximate DB size via crdb_internal
+        total_size = None
+        try:
+            total_size = await conn.fetchval(
+                """
+                SELECT sum(range_size)
+                FROM crdb_internal.ranges_no_leases
+                """
+            )
+        except Exception:
+            pass
+
+        # pool stats
+        pool_stats = {
+            "size": db.pool.get_size(),
+            "idle": db.pool.get_idle_size(),
+            "max_size": db.pool.get_max_size(),
+        }
+
+        return {
+            "total_size_bytes": total_size,
+            "table_sizes_mb": table_sizes,
+            "row_counts": counts,
+            "pool": pool_stats,
+        }
+
+
+def _fetch_redpanda() -> dict:
+    data_layer = st.session_state.get("data_layer")
+    if data_layer is None:
+        return {}
+    try:
+        return run_async(_get_redpanda_stats(data_layer), timeout=8) or {}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def _get_redpanda_stats(data_layer) -> dict:
+    """Fetch Redpanda topic + broker stats via Admin API."""
+    import aiohttp
+    from src.config import settings
+
+    base = settings.redpanda_admin_url
+    result: dict = {}
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            # cluster health (already in health check; reuse)
+            health_resp = await session.get(
+                f"{base}/v1/cluster/health_overview",
+                timeout=aiohttp.ClientTimeout(total=5),
+            )
+            if health_resp.status == 200:
+                result["cluster"] = await health_resp.json()
+
+            # brokers
+            brokers_resp = await session.get(
+                f"{base}/v1/brokers",
+                timeout=aiohttp.ClientTimeout(total=5),
+            )
+            if brokers_resp.status == 200:
+                result["brokers"] = await brokers_resp.json()
+
+            # topics
+            topics_resp = await session.get(
+                f"{base}/v1/topics",
+                timeout=aiohttp.ClientTimeout(total=5),
+            )
+            if topics_resp.status == 200:
+                all_topics = await topics_resp.json()
+                # filter to our prefix
+                prefix = settings.redpanda_topic_prefix
+                result["topics"] = [t for t in all_topics if prefix in t.get("name", "")]
+
+            # per-topic partition metrics
+            topic_metrics: dict = {}
+            for topic in result.get("topics", []):
+                tname = topic.get("name", "")
+                try:
+                    tp_resp = await session.get(
+                        f"{base}/v1/topics/{tname}",
+                        timeout=aiohttp.ClientTimeout(total=5),
+                    )
+                    if tp_resp.status == 200:
+                        topic_metrics[tname] = await tp_resp.json()
+                except Exception:
+                    pass
+            result["topic_details"] = topic_metrics
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
+# ── sub-renderers ─────────────────────────────────────────────────────────────
+
+def _render_flink_panel(data: dict) -> None:
+    st.markdown("#### ⚡ Apache Flink")
+    if "error" in data:
+        st.error(f"Flink unreachable: {data['error']}")
+        return
+
+    jm = data.get("jobmanager", {})
+    jobs = data.get("jobs", {})
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Task Managers", jm.get("task_managers", "—"))
+    col2.metric("Slots Total", jm.get("slots_total", "—"))
+    col3.metric("Slots Free", jm.get("slots_available", "—"))
+    col4.metric("Jobs Running", jm.get("jobs_running", "—"))
+
+    job_statuses = jobs.get("job_statuses", {})
+    if job_statuses:
+        st.markdown("**Jobs**")
+        for job_id, status in job_statuses.items():
+            icon = "🟢" if status == "RUNNING" else "🔴" if status == "FAILED" else "🟡"
+            st.caption(f"{icon} `{job_id[:16]}…`  **{status}**")
+    else:
+        st.caption("No job data available")
+
+
+def _render_cockroach_panel(data: dict) -> None:
+    st.markdown("#### 🪳 CockroachDB")
+    if "error" in data:
+        st.error(f"CockroachDB query failed: {data['error']}")
+        return
+
+    FREE_TIER_BYTES = 10 * 1024 ** 3  # 10 GiB free tier
+
+    total = data.get("total_size_bytes")
+    if total is not None:
+        _pct_bar(total, FREE_TIER_BYTES, "Storage used")
+    else:
+        st.caption("Storage size unavailable (needs SHOW RANGES or crdb_internal)")
+
+    counts = data.get("row_counts", {})
+    if counts:
+        cols = st.columns(3)
+        labels = {
+            "orderbook_metrics": "Raw Metrics",
+            "orderbook_alerts": "Alerts",
+            "orderbook_metrics_windowed": "Windowed",
+        }
+        for i, (tbl, label) in enumerate(labels.items()):
+            val = counts.get(tbl)
+            cols[i].metric(label, f"{val:,}" if val is not None else "—")
+
+    pool = data.get("pool", {})
+    if pool:
+        st.caption(
+            f"Connection pool: {pool.get('size', '?')} active / "
+            f"{pool.get('idle', '?')} idle / "
+            f"{pool.get('max_size', '?')} max"
+        )
+
+
+def _render_redis_panel(data: dict) -> None:
+    st.markdown("#### 🔴 Redis")
+    if "error" in data:
+        st.error(f"Redis query failed: {data['error']}")
+        return
+
+    FREE_TIER_MEMORY = 30 * 1024 ** 2   # 30 MB (Upstash free)
+    FREE_TIER_NETWORK = 256 * 1024 ** 2  # 256 MB/month (Upstash free)
+
+    used_mem = data.get("used_memory")
+    maxmem = data.get("maxmemory") or FREE_TIER_MEMORY
+    _pct_bar(used_mem, maxmem, "Memory")
+
+    net_in = data.get("total_net_input_bytes") or 0
+    net_out = data.get("total_net_output_bytes") or 0
+    net_total = net_in + net_out
+    _pct_bar(net_total, FREE_TIER_NETWORK, "Monthly Network (est.)")
+
+    col1, col2, col3, col4 = st.columns(4)
+    hits = data.get("keyspace_hits") or 0
+    misses = data.get("keyspace_misses") or 0
+    hit_rate = hits / (hits + misses) if (hits + misses) > 0 else None
+
+    col1.metric("Keys (db0)", data.get("db0_keys", "—"))
+    col2.metric("Clients", data.get("connected_clients", "—"))
+    col3.metric("Ops/sec", data.get("instantaneous_ops_per_sec", "—"))
+    col4.metric(
+        "Cache Hit Rate",
+        f"{hit_rate*100:.1f}%" if hit_rate is not None else "—",
+    )
+
+
+def _render_redpanda_panel(data: dict) -> None:
+    st.markdown("#### 🐼 Redpanda")
+    if "error" in data:
+        st.error(f"Redpanda Admin API unavailable: {data['error']}")
+        return
+
+    cluster = data.get("cluster", {})
+    brokers = data.get("brokers", [])
+    topics = data.get("topics", [])
+    topic_details = data.get("topic_details", {})
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Brokers", len(brokers) if isinstance(brokers, list) else "—")
+    col2.metric("App Topics", len(topics))
+    healthy = cluster.get("is_healthy")
+    col3.metric("Cluster Health", "✅ Healthy" if healthy else ("❌ Unhealthy" if healthy is False else "—"))
+
+    if topic_details:
+        st.markdown("**Topic partitions**")
+        rows = []
+        for tname, detail in topic_details.items():
+            partitions = detail.get("partitions", []) if isinstance(detail, dict) else []
+            rows.append({
+                "Topic": tname.split(".")[-1],  # short name
+                "Partitions": len(partitions),
+                "Replicas": partitions[0].get("replicas", []) if partitions else [],
+            })
+        for row in rows:
+            replicas = len(row["Replicas"])
+            st.caption(f"`{row['Topic']}`  — {row['Partitions']} partition(s), {replicas} replica(s)")
+    elif not topics:
+        st.caption("No topics found for configured prefix")
+
+
+# ── main component ────────────────────────────────────────────────────────────
+
+@st.fragment()
+def render_infra_metrics(refresh_rate: int = 60_000) -> None:
+    """Render infrastructure / free-tier usage panel."""
+    st_autorefresh(interval=refresh_rate, key="infra_metrics_refresh")
+
+    with st.expander("🖥️ Infrastructure & Free-Tier Usage", expanded=False):
+        st.caption("Refreshes every 60 s — click to expand")
+
+        tab_flink, tab_crdb, tab_redis, tab_rp = st.tabs(
+            ["Flink", "CockroachDB", "Redis", "Redpanda"]
+        )
+
+        with tab_flink:
+            with st.spinner("Fetching Flink metrics…"):
+                flink_data = _fetch_flink()
+            _render_flink_panel(flink_data)
+
+        with tab_crdb:
+            with st.spinner("Fetching CockroachDB metrics…"):
+                crdb_data = _fetch_cockroach()
+            _render_cockroach_panel(crdb_data)
+
+        with tab_redis:
+            with st.spinner("Fetching Redis metrics…"):
+                redis_data = _fetch_redis_infra()
+            _render_redis_panel(redis_data)
+
+        with tab_rp:
+            with st.spinner("Fetching Redpanda metrics…"):
+                rp_data = _fetch_redpanda()
+            _render_redpanda_panel(rp_data)
