@@ -120,7 +120,7 @@ def _render_alert_table(alerts: list[dict], severity_filter: str = 'ALL') -> Non
         column_config=available_config,
         hide_index=True,
         width='stretch',
-        height=400
+        height=280
     )
 
 
