@@ -4,6 +4,7 @@ from __future__ import annotations
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
+from src.common.redpanda_client import _kafka_security_config
 from dashboard.utils.async_runner import run_async
 
 
@@ -192,63 +193,121 @@ def _fetch_redpanda() -> dict:
     except Exception as e:
         return {"error": str(e)}
 
-
 async def _get_redpanda_stats(data_layer) -> dict:
-    """Fetch Redpanda topic + broker stats via Admin API."""
-    import aiohttp
+    """Fetch Redpanda topic + broker stats via Kafka AdminClient."""
+    from kafka import KafkaAdminClient
+    from kafka.errors import KafkaError
     from src.config import settings
 
-    base = settings.redpanda_admin_url
     result: dict = {}
 
     try:
-        async with aiohttp.ClientSession() as session:
-            # cluster health (already in health check; reuse)
-            health_resp = await session.get(
-                f"{base}/v1/cluster/health_overview",
-                timeout=aiohttp.ClientTimeout(total=5),
-            )
-            if health_resp.status == 200:
-                result["cluster"] = await health_resp.json()
+        admin = KafkaAdminClient(
+            bootstrap_servers=settings.redpanda_bootstrap_server_list,
+            **_kafka_security_config(),
+            request_timeout_ms=5000,
+            connections_max_idle_ms=10000,
+        )
 
-            # brokers
-            brokers_resp = await session.get(
-                f"{base}/v1/brokers",
-                timeout=aiohttp.ClientTimeout(total=5),
-            )
-            if brokers_resp.status == 200:
-                result["brokers"] = await brokers_resp.json()
+        # brokers
+        brokers = admin.describe_cluster()
+        result["brokers"] = [
+            {"node_id": b.nodeId, "host": b.host, "port": b.port}
+            for b in brokers["brokers"]
+        ]
+        result["cluster"] = {
+            "controller_id": brokers["controller_id"],
+            "cluster_id": brokers.get("cluster_id"),
+        }
 
-            # topics
-            topics_resp = await session.get(
-                f"{base}/v1/topics",
-                timeout=aiohttp.ClientTimeout(total=5),
-            )
-            if topics_resp.status == 200:
-                all_topics = await topics_resp.json()
-                # filter to our prefix
-                prefix = settings.redpanda_topic_prefix
-                result["topics"] = [t for t in all_topics if prefix in t.get("name", "")]
+        # topics - filter to our prefix
+        prefix = settings.redpanda_topic_prefix
+        all_topics = admin.list_topics()
+        our_topics = [t for t in all_topics if prefix in t]
+        result["topics"] = [{"name": t} for t in our_topics]
 
-            # per-topic partition metrics
-            topic_metrics: dict = {}
-            for topic in result.get("topics", []):
-                tname = topic.get("name", "")
-                try:
-                    tp_resp = await session.get(
-                        f"{base}/v1/topics/{tname}",
-                        timeout=aiohttp.ClientTimeout(total=5),
-                    )
-                    if tp_resp.status == 200:
-                        topic_metrics[tname] = await tp_resp.json()
-                except Exception:
-                    pass
-            result["topic_details"] = topic_metrics
+        # per-topic partition details
+        if our_topics:
+            topic_details = admin.describe_topics(our_topics)
+            result["topic_details"] = {
+                t["name"]: {
+                    "partitions": [
+                        {
+                            "partition": p["partition"],
+                            "leader": p["leader"],
+                            "replicas": p["replicas"],
+                        }
+                        for p in t["partitions"]
+                    ]
+                }
+                for t in topic_details
+            }
 
+        admin.close()
+
+    except KafkaError as e:
+        result["error"] = str(e)
     except Exception as e:
         result["error"] = str(e)
 
     return result
+
+# async def _get_redpanda_stats(data_layer) -> dict:
+#     """Fetch Redpanda topic + broker stats via Admin API."""
+#     import aiohttp
+#     from src.config import settings
+
+#     base = settings.redpanda_admin_url
+#     result: dict = {}
+
+#     try:
+#         async with aiohttp.ClientSession() as session:
+#             # cluster health (already in health check; reuse)
+#             health_resp = await session.get(
+#                 f"{base}/v1/cluster/health_overview",
+#                 timeout=aiohttp.ClientTimeout(total=5),
+#             )
+#             if health_resp.status == 200:
+#                 result["cluster"] = await health_resp.json()
+
+#             # brokers
+#             brokers_resp = await session.get(
+#                 f"{base}/v1/brokers",
+#                 timeout=aiohttp.ClientTimeout(total=5),
+#             )
+#             if brokers_resp.status == 200:
+#                 result["brokers"] = await brokers_resp.json()
+
+#             # topics
+#             topics_resp = await session.get(
+#                 f"{base}/v1/topics",
+#                 timeout=aiohttp.ClientTimeout(total=5),
+#             )
+#             if topics_resp.status == 200:
+#                 all_topics = await topics_resp.json()
+#                 # filter to our prefix
+#                 prefix = settings.redpanda_topic_prefix
+#                 result["topics"] = [t for t in all_topics if prefix in t.get("name", "")]
+
+#             # per-topic partition metrics
+#             topic_metrics: dict = {}
+#             for topic in result.get("topics", []):
+#                 tname = topic.get("name", "")
+#                 try:
+#                     tp_resp = await session.get(
+#                         f"{base}/v1/topics/{tname}",
+#                         timeout=aiohttp.ClientTimeout(total=5),
+#                     )
+#                     if tp_resp.status == 200:
+#                         topic_metrics[tname] = await tp_resp.json()
+#                 except Exception:
+#                     pass
+#             result["topic_details"] = topic_metrics
+
+#     except Exception as e:
+#         result["error"] = str(e)
+
+#     return result
 
 
 # ── sub-renderers ─────────────────────────────────────────────────────────────
@@ -345,7 +404,7 @@ def _render_cockroach_panel(data: dict) -> None:
 #     )
 
 def _render_redis_panel(data: dict) -> None:
-    st.markdown("#### 🔴 Redis (Redis Cloud Free)")
+    st.markdown("#### 🔴 Redis")
     if "error" in data:
         st.error(f"Redis query failed: {data['error']}")
         return
