@@ -98,14 +98,41 @@ services:
       - .env.oci
     volumes:
       - ./src:/opt/src
-    entrypoint: >
-      bash -lc '
+    entrypoint: |
+      bash -c '
         set -e
-        until /opt/flink/bin/flink list -m flink-jobmanager:8081 >/dev/null 2>&1; do sleep 2; done
-        /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d
-        /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d
-        /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d
+        echo "Waiting for Flink JobManager to be ready..."
+        until /opt/flink/bin/flink list -m flink-jobmanager:8081 >/dev/null 2>&1; do
+          sleep 2
+        done
+        echo "Waiting for at least one TaskManager..."
+        until curl -sf http://flink-jobmanager:8081/taskmanagers | grep -q "\"id\""; do
+          sleep 2
+        done
+        echo "JobManager ready! Checking for existing jobs..."
+
+        curl -sf http://flink-jobmanager:8081/jobs/overview | python3 -c "import sys,json; jobs=json.load(sys.stdin).get(\"jobs\",[]); exit(0 if any(j[\"name\"]==\"OrderBook Metrics Processor\" and j[\"state\"] in (\"RUNNING\",\"CREATED\") for j in jobs) else 1)" \
+          && echo "Skipping OrderBook Metrics Processor -- already running" \
+          || /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d
+
+        curl -sf http://flink-jobmanager:8081/jobs/overview | python3 -c "import sys,json; jobs=json.load(sys.stdin).get(\"jobs\",[]); exit(0 if any(j[\"name\"]==\"OrderBook Alerts Processor\" and j[\"state\"] in (\"RUNNING\",\"CREATED\") for j in jobs) else 1)" \
+          && echo "Skipping OrderBook Alerts Processor -- already running" \
+          || /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d
+
+        curl -sf http://flink-jobmanager:8081/jobs/overview | python3 -c "import sys,json; jobs=json.load(sys.stdin).get(\"jobs\",[]); exit(0 if any(j[\"name\"]==\"OrderBook Window Aggregate Processor\" and j[\"state\"] in (\"RUNNING\",\"CREATED\") for j in jobs) else 1)" \
+          && echo "Skipping OrderBook Window Aggregate Processor -- already running" \
+          || /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d
+
+        echo "Done!"
       '
+    # entrypoint: >
+    #   bash -lc '
+    #     set -e
+    #     until /opt/flink/bin/flink list -m flink-jobmanager:8081 >/dev/null 2>&1; do sleep 2; done
+    #     /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_metrics.py --pyFiles /opt/src -d
+    #     /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_alerts.py --pyFiles /opt/src -d
+    #     /opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/src/jobs/orderbook_windows.py --pyFiles /opt/src -d
+    #   '
     restart: 'no'
 
 volumes:
