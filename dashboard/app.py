@@ -115,5 +115,5 @@ with st.container(border=True):
 with st.container(border=True):
     render_multi_metric_windows(symbol=symbol, timezone_pref=timezone_pref)
 
-with st.container(border=True):
-    render_infra_metrics()
+
+render_infra_metrics()

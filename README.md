@@ -521,25 +521,19 @@ See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for details
 
 [Deployed Dashboard](https://order-book-pipeline.streamlit.app/)
 
-Free tier services:
+## Screenshots
 
-| Local Container | Production             |
-| --------------- | ---------------------- |
-| timescaledb     | CockroachDB Serverless |
-| redis           | Redis Cloud            |
-| redpanda        | Redpanda Serverless    |
-| ingestion       | Oracle VM              |
-| consumers       | Oracle VM              |
-| flink           | Oracle VM              |
-| dashboard       | Streamlit Cloud        |
+![timeseries](docs/images/timeseries.png)
 
-- DB: [CockroachDB](https://www.cockroachlabs.com/)
-- Redis: [Redis Cloud](https://cloud.redis.io/) ([Upstash Redis](https://upstash.com/) also has decent free tier)
-- Redpanda: [redpanda serverless available](https://www.redpanda.com/try-data-streaming) (or small GCP VM self-hosted)
-- Ingestion: Cloud VM
-- Consumers: Cloud VM
-- Flink: Cloud VM
-- Dashboard: [Streamlit](https://streamlit.io/)
+![orderbook depth](docs/images/orderbook_depth.png)
+
+![alerts](docs/images/alerts.png)
+
+![imbalance trend](docs/images/imb_trend.png)
+
+![multi metric chart](docs/images/multi_metric_chart.png)
+
+![infra monitor](docs/images/infra_monitor.png)
 
 ## Potential Features Roadmap
 

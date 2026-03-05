@@ -44,9 +44,6 @@ source .venv/bin/activate  # macOS/Linux
 # Or on Windows: .venv\Scripts\activate
 
 # Install all dependencies (including dev tools)
-uv pip install -e ".[dev]"
-
-# Or with Kafka support
 uv pip install -e ".[kafka,dev]"
 
 # Using Makefile
@@ -66,13 +63,20 @@ pre-commit run --all-files
 make pre-commit
 ```
 
+### 5. Configure Environment
+
+```bash
+# Copy example config & update .env
+cp .env.example .env
+```
+
 ### 4. Start Infrastructure Services
 
 You still need Docker for the database, Redis, etc:
 
 ```bash
-# Start core services (CockroachDB, Redis)
-docker-compose up -d cockroachdb redis
+# Start services
+docker-compose up -d
 
 # Or use make/just
 make up
@@ -80,32 +84,9 @@ just up
 ```
 
 Local CockroachDB Admin UI: `http://localhost:8088`  
-Redpanda Console remains on `http://localhost:8080`.
-
-### 5. Configure Environment
-
-```bash
-# Copy example config
-cp .env.example .env
-
-# Edit with your settings
-nano .env  # or use your favorite editor
-```
-
-## Development Workflow
-
-### Running Code Locally
-
-```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# Run ingestion service locally (connects to Dockerized DB/Redis)
-python src/ingestion/main.py
-
-# Run dashboard locally
-streamlit run dashboard/app.py
-```
+Redpanda Console remains on `http://localhost:8080`
+Flink: `http://localhost:8081`
+Streamlit: `http://localhost:8501`
 
 ### Code Quality Tools
 
@@ -164,34 +145,7 @@ just test            # Run tests
 just                 # List all commands
 ```
 
-## Project Structure
-
-```
-src/
-├── ingestion/          # Data ingestion service
-│   ├── main.py        # Entry point
-│   ├── websocket_client.py
-│   ├── metrics_calculator.py
-│   └── alert_engine.py
-├── common/            # Shared utilities
-│   ├── database.py
-│   ├── redis_client.py
-│   └── models.py
-└── config.py          # Configuration
-
-dashboard/
-├── app.py            # Main Streamlit app
-└── components/       # UI components
-
-tests/
-├── test_metrics.py
-├── test_alerts.py
-└── test_websocket.py
-```
-
-## Adding Dependencies
-
-### Using uv (Recommended)
+## Adding Dependencies with uv
 
 ```bash
 # Add a package
@@ -203,16 +157,6 @@ uv pip install -e ".[dev]"
 
 # For development-only dependencies
 # Add to [project.optional-dependencies] dev section
-```
-
-### Using pip (Traditional)
-
-```bash
-# Install a package
-pip install package-name
-
-# Update requirements.txt
-pip freeze > requirements.txt
 ```
 
 ## Docker Development

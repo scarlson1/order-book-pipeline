@@ -91,24 +91,20 @@ def _fetch_cockroach() -> dict:
 
 
 async def _get_cockroach_stats(data_layer) -> dict:
-    """Query CockroachDB for storage and row counts."""
+    """Query CockroachDB for storage and row counts.
+
+    Storage size is probed via several approaches in order of reliability:
+      1. crdb_internal.tenant_usage_details  (serverless / dedicated, CRDB ≥ v22.2)
+      2. crdb_internal.ranges_no_leases      (self-hosted, needs VIEWCLUSTERMETADATA)
+      3. information_schema.tables estimated row counts as a last resort indicator
+    All failures are swallowed so partial data is always returned.
+    """
     db = data_layer.db.db
     if db.pool is None:
         return {}
-    async with db.pool.acquire() as conn:
-        # estimated table sizes
-        rows = await conn.fetch(
-            """
-            SELECT
-                table_name,
-                range_size_mb
-            FROM [SHOW RANGES FROM DATABASE defaultdb WITH DETAILS]
-            LIMIT 20
-            """
-        )
-        table_sizes = {r["table_name"]: r["range_size_mb"] for r in rows} if rows else {}
 
-        # row counts
+    async with db.pool.acquire() as conn:
+        # ── row counts (reliable on all tiers) ───────────────────────────────
         counts: dict = {}
         for tbl in ("orderbook_metrics", "orderbook_alerts", "orderbook_metrics_windowed"):
             try:
@@ -117,19 +113,62 @@ async def _get_cockroach_stats(data_layer) -> dict:
             except Exception:
                 counts[tbl] = None
 
-        # approximate DB size via crdb_internal
-        total_size = None
+        # ── table-level estimated sizes from information_schema ───────────────
+        table_sizes_bytes: dict = {}
         try:
-            total_size = await conn.fetchval(
+            rows = await conn.fetch(
                 """
-                SELECT sum(range_size)
-                FROM crdb_internal.ranges_no_leases
+                SELECT
+                    table_name,
+                    (data_length + index_length) AS size_bytes
+                FROM information_schema.tables
+                WHERE table_schema = current_database()
+                  AND table_name IN (
+                      'orderbook_metrics',
+                      'orderbook_alerts',
+                      'orderbook_metrics_windowed'
+                  )
                 """
             )
+            for r in rows:
+                if r["size_bytes"] is not None:
+                    table_sizes_bytes[r["table_name"]] = int(r["size_bytes"])
         except Exception:
             pass
 
-        # pool stats
+        # ── total DB size: try three escalating approaches ────────────────────
+        total_size: int | None = None
+
+        # Approach 1: serverless tenant usage (CRDB Serverless / v22.2+)
+        if total_size is None:
+            try:
+                total_size = await conn.fetchval(
+                    """
+                    SELECT sql_instance_data_bytes
+                    FROM crdb_internal.tenant_usage_details
+                    LIMIT 1
+                    """
+                )
+            except Exception:
+                pass
+
+        # Approach 2: sum across ranges (self-hosted, needs VIEWCLUSTERMETADATA)
+        if total_size is None:
+            try:
+                total_size = await conn.fetchval(
+                    """
+                    SELECT sum(range_size)
+                    FROM crdb_internal.ranges_no_leases
+                    """
+                )
+            except Exception:
+                pass
+
+        # Approach 3: fall back to summing information_schema estimates
+        if total_size is None and table_sizes_bytes:
+            total_size = sum(table_sizes_bytes.values())
+
+        # ── connection pool stats ─────────────────────────────────────────────
         pool_stats = {
             "size": db.pool.get_size(),
             "idle": db.pool.get_idle_size(),
@@ -137,8 +176,8 @@ async def _get_cockroach_stats(data_layer) -> dict:
         }
 
         return {
-            "total_size_bytes": total_size,
-            "table_sizes_mb": table_sizes,
+            "total_size_bytes": int(total_size) if total_size is not None else None,
+            "table_sizes_bytes": table_sizes_bytes,
             "row_counts": counts,
             "pool": pool_stats,
         }
@@ -274,36 +313,86 @@ def _render_cockroach_panel(data: dict) -> None:
         )
 
 
+# def _render_redis_panel(data: dict) -> None:
+#     st.markdown("#### 🔴 Redis")
+#     if "error" in data:
+#         st.error(f"Redis query failed: {data['error']}")
+#         return
+
+#     FREE_TIER_MEMORY = 30 * 1024 ** 2   # 30 MB (Upstash free)
+#     FREE_TIER_NETWORK = 256 * 1024 ** 2  # 256 MB/month (Upstash free)
+
+#     used_mem = data.get("used_memory")
+#     maxmem = data.get("maxmemory") or FREE_TIER_MEMORY
+#     _pct_bar(used_mem, maxmem, "Memory")
+
+#     net_in = data.get("total_net_input_bytes") or 0
+#     net_out = data.get("total_net_output_bytes") or 0
+#     net_total = net_in + net_out
+#     _pct_bar(net_total, FREE_TIER_NETWORK, "Monthly Network (est.)")
+
+#     col1, col2, col3, col4 = st.columns(4)
+#     hits = data.get("keyspace_hits") or 0
+#     misses = data.get("keyspace_misses") or 0
+#     hit_rate = hits / (hits + misses) if (hits + misses) > 0 else None
+
+#     col1.metric("Keys (db0)", data.get("db0_keys", "—"))
+#     col2.metric("Clients", data.get("connected_clients", "—"))
+#     col3.metric("Ops/sec", data.get("instantaneous_ops_per_sec", "—"))
+#     col4.metric(
+#         "Cache Hit Rate",
+#         f"{hit_rate*100:.1f}%" if hit_rate is not None else "—",
+#     )
+
 def _render_redis_panel(data: dict) -> None:
-    st.markdown("#### 🔴 Redis")
+    st.markdown("#### 🔴 Redis (Redis Cloud Free)")
     if "error" in data:
         st.error(f"Redis query failed: {data['error']}")
         return
 
-    FREE_TIER_MEMORY = 30 * 1024 ** 2   # 30 MB (Upstash free)
-    FREE_TIER_NETWORK = 256 * 1024 ** 2  # 256 MB/month (Upstash free)
+    # Redis Cloud free tier hard limits
+    FREE_TIER_MEMORY = 30 * 1024 ** 2  # 30 MB
+    FREE_TIER_MAX_CONNS = 30           # 30 connections
+    FREE_TIER_MAX_OPS = 100            # 100 ops/sec throughput cap
 
+    # -- memory ---------------------------------------------------------------
     used_mem = data.get("used_memory")
     maxmem = data.get("maxmemory") or FREE_TIER_MEMORY
-    _pct_bar(used_mem, maxmem, "Memory")
+    _pct_bar(used_mem, maxmem, "Memory (30 MB limit)")
 
+    # -- throughput vs cap ----------------------------------------------------
+    ops = data.get("instantaneous_ops_per_sec") or 0
+    ops_pct = min(ops / FREE_TIER_MAX_OPS, 1.0)
+    ops_color = "🟢" if ops_pct < 0.7 else "🟡" if ops_pct < 0.9 else "🔴"
+    st.progress(ops_pct, text=f"{ops_color} Throughput  {ops} / {FREE_TIER_MAX_OPS} ops/sec ({ops_pct*100:.1f}%)")
+
+    # -- connections vs cap ---------------------------------------------------
+    clients = data.get("connected_clients") or 0
+    conn_pct = min(clients / FREE_TIER_MAX_CONNS, 1.0)
+    conn_color = "🟢" if conn_pct < 0.7 else "🟡" if conn_pct < 0.9 else "🔴"
+    st.progress(conn_pct, text=f"{conn_color} Connections  {clients} / {FREE_TIER_MAX_CONNS} ({conn_pct*100:.1f}%)")
+
+    # -- network transfer (cumulative since last restart) ---------------------
     net_in = data.get("total_net_input_bytes") or 0
     net_out = data.get("total_net_output_bytes") or 0
-    net_total = net_in + net_out
-    _pct_bar(net_total, FREE_TIER_NETWORK, "Monthly Network (est.)")
+    uptime = data.get("uptime_in_seconds") or 1
 
-    col1, col2, col3, col4 = st.columns(4)
     hits = data.get("keyspace_hits") or 0
     misses = data.get("keyspace_misses") or 0
     hit_rate = hits / (hits + misses) if (hits + misses) > 0 else None
 
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Keys (db0)", data.get("db0_keys", "—"))
-    col2.metric("Clients", data.get("connected_clients", "—"))
-    col3.metric("Ops/sec", data.get("instantaneous_ops_per_sec", "—"))
-    col4.metric(
-        "Cache Hit Rate",
-        f"{hit_rate*100:.1f}%" if hit_rate is not None else "—",
+    col2.metric("Net In (since restart)", _fmt_bytes(net_in))
+    col3.metric("Net Out (since restart)", _fmt_bytes(net_out))
+    col4.metric("Cache Hit Rate", f"{hit_rate*100:.1f}%" if hit_rate is not None else "—")
+
+    st.caption(
+        f"ℹ️ Network counters reset on restart "
+        f"(uptime {uptime // 3600}h {(uptime % 3600) // 60}m). "
+        "Monthly bandwidth quota is not exposed via Redis INFO — monitor via the Redis Cloud console."
     )
+
 
 
 def _render_redpanda_panel(data: dict) -> None:
@@ -347,7 +436,7 @@ def render_infra_metrics(refresh_rate: int = 60_000) -> None:
     """Render infrastructure / free-tier usage panel."""
     st_autorefresh(interval=refresh_rate, key="infra_metrics_refresh")
 
-    with st.expander("🖥️ Infrastructure & Free-Tier Usage", expanded=False):
+    with st.expander("🖥️ Infrastructure Usage & Metrics", expanded=False):
         st.caption("Refreshes every 60 s — click to expand")
 
         tab_flink, tab_crdb, tab_redis, tab_rp = st.tabs(
