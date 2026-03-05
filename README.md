@@ -42,6 +42,18 @@ Redpanda (orderbook.metrics / orderbook.alerts)
 - **Redis caching** for ultra-low latency reads
 - **Interactive dashboard** with Streamlit
 
+[View the deployed dashboard](https://order-book-pipeline.streamlit.app/)
+
+## Documentation
+
+- [Development](docs/DEVELOPMENT.md)
+- [Deployment](docs/DEPLOYMENT.md)
+- [Metrics](docs/METRICS.md)
+- [Flink](docs/FLINK.md)
+- [Redpanda](docs/REDPANDA.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+  <!-- TODO: API ? DB (schema, migrations, etc.) ? -->
+
 ## Quick Start (local docker compose)
 
 ### Prerequisites
