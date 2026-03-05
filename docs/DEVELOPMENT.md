@@ -356,80 +356,24 @@ locust -f tests/load_test.py
 
 ## CI/CD
 
-### GitHub Actions Example
+### [deploy-oci.yml](.github/workflows/deploy-oci.yml)
 
-Create `.github/workflows/test.yml`:
+- deploys consumers, flink, ingestion services to OCI VM
+- creates `.env.oci` from github secrets
+- runs docker compose startup commands
 
-```yaml
-name: Tests
+### [infra-apply.yml](.github/workflows/infra-apply.yml)
 
-on: [push, pull_request]
+- applies all infra config in terraform (Cockroach, OCI, Redis, Redpanda)
+- not used, resources already exist
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
+### [infra-apply-oci.yml](.github/workflows/infra-apply-oci.yml)
 
-    services:
-      postgres:
-        image: timescale/timescaledb:latest-pg15
-        env:
-          POSTGRES_PASSWORD: test
-      redis:
-        image: redis:7-alpine
+- applies only oci infra
 
-    steps:
-      - uses: actions/checkout@v4
+### [test.yml](.github/workflows/test.yml)
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v1
-
-      - name: Set up Python
-        run: uv python install 3.11
-
-      - name: Install dependencies
-        run: uv pip install -e ".[dev]"
-
-      - name: Run tests
-        run: pytest
-
-      - name: Run linting
-        run: |
-          ruff check .
-          yapf --diff -r src dashboard tests
-```
-
-## Tips & Best Practices
-
-### Development Tips
-
-1. **Use uv for everything** - It's massively faster than pip
-2. **Enable pre-commit hooks** - Catch issues before committing
-3. **Write tests first** - TDD helps design better APIs
-4. **Use type hints** - mypy will catch bugs early
-5. **Format on save** - Configure your IDE to run yapf/ruff automatically
-
-### Code Style
-
-- Follow PEP 8 (enforced by yapf and ruff)
-- Use type hints everywhere
-- Write docstrings for public functions
-- Keep functions small (<50 lines)
-- Use meaningful variable names
-
-### Performance Tips
-
-1. **Batch database writes** - Don't write every metric individually
-2. **Use connection pooling** - Reuse database connections
-3. **Cache in Redis** - For frequently accessed data
-4. **Use async/await** - For I/O-bound operations
-5. **Profile before optimizing** - Measure first, then optimize
-
-### Security Tips
-
-1. **Never commit .env** - Use .env.example as template
-2. **Use environment variables** - For all secrets
-3. **Validate all inputs** - Use Pydantic models
-4. **Keep dependencies updated** - Run `uv pip list --outdated` regularly
+- runs all rests in `tests/`
 
 ## Troubleshooting
 
@@ -466,11 +410,11 @@ docker-compose logs timescaledb
 docker-compose exec timescaledb pg_isready
 ```
 
+For more details, see [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+
 ## Getting Help
 
 - Check the logs: `make logs` or `just logs`
 - Review the README.md
-- Check PROJECT_STRUCTURE.md for implementation details
-- Ask in GitHub issues (if you open-source this)
 
 Happy coding! 🚀
