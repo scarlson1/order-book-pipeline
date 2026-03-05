@@ -210,14 +210,26 @@ async def _get_redpanda_stats(data_layer) -> dict:
         )
 
         # brokers
-        brokers = admin.describe_cluster()
-        result["brokers"] = [
-            {"node_id": b.nodeId, "host": b.host, "port": b.port}
-            for b in brokers["brokers"]
-        ]
+        # describe_cluster() returns dicts on kafka-python; some builds return
+        # broker objects with attributes instead — handle both defensively.
+        cluster_info = admin.describe_cluster()
+        raw_brokers = cluster_info.get("brokers", [])
+        normalised_brokers = []
+        for b in raw_brokers:
+            if isinstance(b, dict):
+                node_id = b.get("node_id") or b.get("nodeId")
+                host    = b.get("host")
+                port    = b.get("port")
+            else:
+                # object with attributes (some kafka-python builds)
+                node_id = getattr(b, "nodeId", None) or getattr(b, "node_id", None)
+                host    = getattr(b, "host", None)
+                port    = getattr(b, "port", None)
+            normalised_brokers.append({"node_id": node_id, "host": host, "port": port})
+        result["brokers"] = normalised_brokers
         result["cluster"] = {
-            "controller_id": brokers["controller_id"],
-            "cluster_id": brokers.get("cluster_id"),
+            "controller_id": cluster_info.get("controller_id"),
+            "cluster_id":    cluster_info.get("cluster_id"),
         }
 
         # topics - filter to our prefix
@@ -234,8 +246,15 @@ async def _get_redpanda_stats(data_layer) -> dict:
                     "partitions": [
                         {
                             "partition": p["partition"],
-                            "leader": p["leader"],
-                            "replicas": p["replicas"],
+                            "leader":    p["leader"],
+                            # replicas may be list[int] or list[dict] depending
+                            # on kafka-python version — normalise to list[int]
+                            "replicas": [
+                                r if isinstance(r, int) else (
+                                    r.get("node_id") or r.get("nodeId") or 0
+                                )
+                                for r in (p.get("replicas") or [])
+                            ],
                         }
                         for p in t["partitions"]
                     ]
@@ -251,6 +270,7 @@ async def _get_redpanda_stats(data_layer) -> dict:
         result["error"] = str(e)
 
     return result
+
 
 # async def _get_redpanda_stats(data_layer) -> dict:
 #     """Fetch Redpanda topic + broker stats via Admin API."""

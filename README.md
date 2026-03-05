@@ -53,7 +53,6 @@ Redpanda (orderbook.metrics / orderbook.alerts)
 - [Flink](docs/FLINK.md)
 - [Redpanda](docs/REDPANDA.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
-  <!-- TODO: API ? DB (schema, migrations, etc.) ? -->
 
 ## Quick Start (local docker compose)
 
