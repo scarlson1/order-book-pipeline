@@ -205,7 +205,7 @@ async def main() -> None:
     setup_signal_handlers(service)
 
     try:
-        # creates instances of RedPanda producer and websocket connection to binance
+        # creates instances of RedPanda producer and Binance websocket connection
         # publishes websocket to RedPanda topic
         await service.start()
     except KeyboardInterrupt:
