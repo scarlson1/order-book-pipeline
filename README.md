@@ -48,6 +48,7 @@ Redpanda (orderbook.metrics / orderbook.alerts)
 
 - [Development](docs/DEVELOPMENT.md)
 - [Deployment](docs/DEPLOYMENT.md)
+- [Database](docs/DATABASE.md)
 - [Metrics](docs/METRICS.md)
 - [Flink](docs/FLINK.md)
 - [Redpanda](docs/REDPANDA.md)
