@@ -1,6 +1,9 @@
 import sys
 from pathlib import Path
 
+from dashboard.components.alert_heatmap import render_alert_heatmap
+from dashboard.components.orderbook_depth_heatmap import render_depth_heatmap
+
 # Add project root to sys.path for Streamlit Cloud compatibility
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -92,28 +95,33 @@ with st.container(border=True):
 # active alerts
 render_alert_feed(symbol=symbol, limit=50)
 
-# two columns: windowed statistics; alert frequency
-col_windowed_stats, col_alert_freq = st.columns(2)
 
-with col_windowed_stats:
-    st.text('📊 Windowed Statistics')
-    render_windowed_stats(symbol, timezone_pref=timezone_pref)
-
-with col_alert_freq:
-    # st.bar_chart()
-    # st.text('TODO: Alert Frequency')
-    st.text('Imbalance Ratio')
-    render_imbalance_gauge(symbol)
-
+with st.container(border=True):
+    render_alert_heatmap(symbol)
 
 with st.container(border=True):
     render_imbalance_trend(symbol, timezone_pref)
 
+# with st.container(border=True):
+#     render_multi_metric_windows(symbol=symbol, timezone_pref=timezone_pref)
+
+with st.container(border=True):
+    render_depth_heatmap(symbol, timezone_pref)
+
 with st.container(border=True):
     render_volatility_heatmap(symbol=symbol, timezone_pref=timezone_pref)
 
-with st.container(border=True):
-    render_multi_metric_windows(symbol=symbol, timezone_pref=timezone_pref)
-
-
 render_infra_metrics()
+
+# # two columns: windowed statistics; alert frequency
+# col_windowed_stats, col_alert_freq = st.columns(2)
+
+# with col_windowed_stats:
+#     st.text('📊 Windowed Statistics')
+#     render_windowed_stats(symbol, timezone_pref=timezone_pref)
+
+# with col_alert_freq:
+#     # st.bar_chart()
+#     # st.text('TODO: Alert Frequency')
+#     st.text('Imbalance Ratio')
+#     render_imbalance_gauge(symbol)
