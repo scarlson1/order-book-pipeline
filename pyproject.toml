@@ -108,6 +108,11 @@ target-version = ['py311']
 [tool.yapf]
 based_on_style = "pep8"
 column_limit = 100
+split_before_dot = true
+SPLIT_BEFORE_FIRST_ARGUMENT = true
+INDENT_WIDTH = 4
+CONTINUATION_INDENT_WIDTH = 2
+dedent_closing_brackets = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

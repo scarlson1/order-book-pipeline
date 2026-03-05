@@ -313,36 +313,86 @@ def _render_cockroach_panel(data: dict) -> None:
         )
 
 
+# def _render_redis_panel(data: dict) -> None:
+#     st.markdown("#### 🔴 Redis")
+#     if "error" in data:
+#         st.error(f"Redis query failed: {data['error']}")
+#         return
+
+#     FREE_TIER_MEMORY = 30 * 1024 ** 2   # 30 MB (Upstash free)
+#     FREE_TIER_NETWORK = 256 * 1024 ** 2  # 256 MB/month (Upstash free)
+
+#     used_mem = data.get("used_memory")
+#     maxmem = data.get("maxmemory") or FREE_TIER_MEMORY
+#     _pct_bar(used_mem, maxmem, "Memory")
+
+#     net_in = data.get("total_net_input_bytes") or 0
+#     net_out = data.get("total_net_output_bytes") or 0
+#     net_total = net_in + net_out
+#     _pct_bar(net_total, FREE_TIER_NETWORK, "Monthly Network (est.)")
+
+#     col1, col2, col3, col4 = st.columns(4)
+#     hits = data.get("keyspace_hits") or 0
+#     misses = data.get("keyspace_misses") or 0
+#     hit_rate = hits / (hits + misses) if (hits + misses) > 0 else None
+
+#     col1.metric("Keys (db0)", data.get("db0_keys", "—"))
+#     col2.metric("Clients", data.get("connected_clients", "—"))
+#     col3.metric("Ops/sec", data.get("instantaneous_ops_per_sec", "—"))
+#     col4.metric(
+#         "Cache Hit Rate",
+#         f"{hit_rate*100:.1f}%" if hit_rate is not None else "—",
+#     )
+
 def _render_redis_panel(data: dict) -> None:
-    st.markdown("#### 🔴 Redis")
+    st.markdown("#### 🔴 Redis (Redis Cloud Free)")
     if "error" in data:
         st.error(f"Redis query failed: {data['error']}")
         return
 
-    FREE_TIER_MEMORY = 30 * 1024 ** 2   # 30 MB (Upstash free)
-    FREE_TIER_NETWORK = 256 * 1024 ** 2  # 256 MB/month (Upstash free)
+    # Redis Cloud free tier hard limits
+    FREE_TIER_MEMORY = 30 * 1024 ** 2  # 30 MB
+    FREE_TIER_MAX_CONNS = 30           # 30 connections
+    FREE_TIER_MAX_OPS = 100            # 100 ops/sec throughput cap
 
+    # -- memory ---------------------------------------------------------------
     used_mem = data.get("used_memory")
     maxmem = data.get("maxmemory") or FREE_TIER_MEMORY
-    _pct_bar(used_mem, maxmem, "Memory")
+    _pct_bar(used_mem, maxmem, "Memory (30 MB limit)")
 
+    # -- throughput vs cap ----------------------------------------------------
+    ops = data.get("instantaneous_ops_per_sec") or 0
+    ops_pct = min(ops / FREE_TIER_MAX_OPS, 1.0)
+    ops_color = "🟢" if ops_pct < 0.7 else "🟡" if ops_pct < 0.9 else "🔴"
+    st.progress(ops_pct, text=f"{ops_color} Throughput  {ops} / {FREE_TIER_MAX_OPS} ops/sec ({ops_pct*100:.1f}%)")
+
+    # -- connections vs cap ---------------------------------------------------
+    clients = data.get("connected_clients") or 0
+    conn_pct = min(clients / FREE_TIER_MAX_CONNS, 1.0)
+    conn_color = "🟢" if conn_pct < 0.7 else "🟡" if conn_pct < 0.9 else "🔴"
+    st.progress(conn_pct, text=f"{conn_color} Connections  {clients} / {FREE_TIER_MAX_CONNS} ({conn_pct*100:.1f}%)")
+
+    # -- network transfer (cumulative since last restart) ---------------------
     net_in = data.get("total_net_input_bytes") or 0
     net_out = data.get("total_net_output_bytes") or 0
-    net_total = net_in + net_out
-    _pct_bar(net_total, FREE_TIER_NETWORK, "Monthly Network (est.)")
+    uptime = data.get("uptime_in_seconds") or 1
 
-    col1, col2, col3, col4 = st.columns(4)
     hits = data.get("keyspace_hits") or 0
     misses = data.get("keyspace_misses") or 0
     hit_rate = hits / (hits + misses) if (hits + misses) > 0 else None
 
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Keys (db0)", data.get("db0_keys", "—"))
-    col2.metric("Clients", data.get("connected_clients", "—"))
-    col3.metric("Ops/sec", data.get("instantaneous_ops_per_sec", "—"))
-    col4.metric(
-        "Cache Hit Rate",
-        f"{hit_rate*100:.1f}%" if hit_rate is not None else "—",
+    col2.metric("Net In (since restart)", _fmt_bytes(net_in))
+    col3.metric("Net Out (since restart)", _fmt_bytes(net_out))
+    col4.metric("Cache Hit Rate", f"{hit_rate*100:.1f}%" if hit_rate is not None else "—")
+
+    st.caption(
+        f"ℹ️ Network counters reset on restart "
+        f"(uptime {uptime // 3600}h {(uptime % 3600) // 60}m). "
+        "Monthly bandwidth quota is not exposed via Redis INFO — monitor via the Redis Cloud console."
     )
+
 
 
 def _render_redpanda_panel(data: dict) -> None:
