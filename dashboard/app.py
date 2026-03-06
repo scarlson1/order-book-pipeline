@@ -1,9 +1,6 @@
 import sys
 from pathlib import Path
 
-from dashboard.components.alert_heatmap import render_alert_heatmap
-from dashboard.components.orderbook_depth_heatmap import render_depth_heatmap
-
 # Add project root to sys.path for Streamlit Cloud compatibility
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -11,17 +8,15 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import streamlit as st
 
+from dashboard.components.alert_heatmap import render_alert_heatmap
+from dashboard.components.orderbook_depth_heatmap import render_depth_heatmap
 from dashboard.components.alert_feed import render_alert_feed
-from dashboard.components.gauge import render_imbalance_gauge
 from dashboard.components.imbalance_trend import render_imbalance_trend
 from dashboard.components.metrics_cards import render_metrics_cards
-from dashboard.components.multi_metric_windows import render_multi_metric_windows
 from dashboard.components.orderbook_viz import render_orderbook_viz
 from dashboard.components.services_health_status import render_status_indicators
 from dashboard.components.timeseries import render_timeseries_chart
 from dashboard.components.volatility_heatmap import render_volatility_heatmap
-# from dashboard.components.windowed_aggregates import render_windowed_aggregates
-from dashboard.components.windowed_statistics import render_windowed_stats
 from dashboard.components.infra_metrics import render_infra_metrics
 from dashboard.data.data_layer import DataLayer
 from src.config import settings
