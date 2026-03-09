@@ -45,12 +45,14 @@ services:
       - .env.oci
     environment:
       - PYTHONPATH=/opt:/opt/src
+      - REDPANDA_BOOTSTRAP_PORT=9092
+      - REDPANDA_ADMIN_URL=http://redpanda:9644
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
         rest.port: 8081
         rest.bind-address: 0.0.0.0
-        taskmanager.numberOfTaskSlots: 2
+        taskmanager.numberOfTaskSlots: 4
         parallelism.default: 1
         jobmanager.memory.process.size: 1600m
         state.backend.type: rocksdb
@@ -75,6 +77,8 @@ services:
       - .env.oci
     environment:
       - PYTHONPATH=/opt:/opt/src
+      - REDPANDA_BOOTSTRAP_PORT=9092
+      - REDPANDA_ADMIN_URL=http://redpanda:9644
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager

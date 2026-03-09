@@ -206,8 +206,7 @@ DOWNSAMPLE_PUBLISH_TO_REDIS=false
 UPDATE_SPEED=100ms
 ├─ Messages/sec: 30 (3 symbols × 10/sec)
 ├─ Daily storage: 1.3 GB
-├─ 10GB limit: 7.7 days ❌
-└─ Use case: Development only
+└─ 10GB limit: 7.7 days ❌
 
 UPDATE_SPEED=1000ms
 ├─ Messages/sec: 3 (3 symbols × 1/sec)
@@ -468,48 +467,7 @@ docker-compose logs -f
 
 ## Troubleshooting
 
-### Services won't start
-
-```bash
-# Check if ports are already in use
-lsof -i :26258  # CockroachDB
-lsof -i :6379  # Redis
-lsof -i :8501  # Streamlit
-
-# Reset everything
-docker-compose down -v
-docker-compose up -d
-```
-
-### Database connection errors
-
-```bash
-# Verify database is ready
-docker-compose exec timescaledb pg_isready -U orderbook_user
-
-# Check database logs
-docker-compose logs timescaledb
-```
-
-### WebSocket connection issues
-
-```bash
-# Check ingestion service logs
-docker-compose logs ingestion
-
-# Verify network connectivity
-docker-compose exec ingestion ping -c 3 stream.binance.us
-```
-
-### Dashboard not loading
-
-```bash
-# Check dashboard logs
-docker-compose logs dashboard
-
-# Rebuild dashboard
-docker-compose up -d --build dashboard
-```
+See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for details
 
 ## Local Development
 
