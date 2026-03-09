@@ -12,3 +12,4 @@ runcmd:
   - usermod -aG docker ubuntu
   - mkdir -p /opt/order-book-pipeline
   - chown -R ubuntu:ubuntu /opt/order-book-pipeline
+  - git clone https://github.com/scarlson1/order-book-pipeline.git /opt/order-book-pipeline || true

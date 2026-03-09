@@ -10,8 +10,13 @@ from datetime import datetime, timezone
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.common.watermark_strategy import WatermarkStrategy
 from pyflink.common.time import Duration, Time
-from pyflink.datastream.connectors.kafka import (KafkaSource, KafkaSink, KafkaOffsetsInitializer,
-                                                 KafkaRecordSerializationSchema, DeliveryGuarantee)
+from pyflink.datastream.connectors.kafka import (
+    KafkaSource, 
+    KafkaSink, 
+    KafkaOffsetsInitializer, 
+    KafkaRecordSerializationSchema, 
+    DeliveryGuarantee
+)
 from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.typeinfo import Types
 from pyflink.datastream.window import SlidingEventTimeWindows, TumblingProcessingTimeWindows
