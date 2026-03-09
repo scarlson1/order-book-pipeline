@@ -135,5 +135,116 @@ services:
     #   '
     restart: 'no'
 
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=512M
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      # - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+      - --advertise-kafka-addr=PLAINTEXT://163.192.103.204:9092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=redpanda:8082
+      - --schema-registry-addr=0.0.0.0:8081
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=redpanda:33145
+      - --admin-addr=0.0.0.0:9644
+      # Retention: tune per topic via rpk after first boot instead (see below),
+      # but set a safe cluster-level default to protect the 100 GB boot volume.
+      - --set=redpanda.log_retention_ms=86400000 # 24 h default
+      - --set=redpanda.log_segment_size=134217728 # 128 MB segments
+      - --set=redpanda.log_cleanup_policy=delete
+    ports:
+      - '9092:9092' # Kafka API  – for streamlit health checks
+      - '9644:9644' # Admin API  – for streamlit health checks
+      - '8082:8082' # HTTP Proxy – internal only
+      - '8081:8081' # Schema Registry – internal only
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ['CMD-SHELL', "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ── Redpanda Console ────────────────────────────────────────────────────────
+  # Accessible at http://<VM_PUBLIC_IP>:8080
+  # Protect with an OCI security-list rule that restricts to your IP.
+  redpanda-console:
+    image: redpandadata/console:latest
+    container_name: redpanda-console
+    restart: unless-stopped
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      CONFIG_FILEPATH: /etc/redpanda-console/config.yaml
+    volumes:
+      - ./config/redpanda-console.yaml:/etc/redpanda-console/config.yaml:ro
+    ports:
+      - '8080:8080' # Restrict in OCI security list to your IP only
+
+  # ── Topic initialisation ────────────────────────────────────────────────────
+  # Runs once on first deploy (or re-deploy). Idempotent: --if-not-exists
+  # prevents errors if topics already exist.
+  redpanda-init:
+    image: redpandadata/redpanda:latest
+    container_name: redpanda-init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: 'no'
+    entrypoint: ['/bin/bash', '-c']
+    command:
+      - |
+        set -e
+        echo "Creating topics..."
+
+        rpk topic create ${REDPANDA_TOPIC_PREFIX}.raw \
+          --brokers redpanda:9092 \
+          --partitions 3 \
+          --replicas 1 \
+          --if-not-exists \
+          -c retention.ms=3600000 \
+          -c cleanup.policy=delete
+
+        rpk topic create ${REDPANDA_TOPIC_PREFIX}.metrics \
+          --brokers redpanda:9092 \
+          --partitions 3 \
+          --replicas 1 \
+          --if-not-exists \
+          -c retention.ms=3600000 \
+          -c cleanup.policy=delete
+
+        rpk topic create ${REDPANDA_TOPIC_PREFIX}.metrics.windowed \
+          --brokers redpanda:9092 \
+          --partitions 3 \
+          --replicas 1 \
+          --if-not-exists \
+          -c retention.ms=7200000 \
+          -c cleanup.policy=delete
+
+        rpk topic create ${REDPANDA_TOPIC_PREFIX}.alerts \
+          --brokers redpanda:9092 \
+          --partitions 1 \
+          --replicas 1 \
+          --if-not-exists \
+          -c retention.ms=86400000 \
+          -c cleanup.policy=delete
+
+        echo "Topics ready:"
+        rpk topic list --brokers redpanda:9092
+    environment:
+      REDPANDA_TOPIC_PREFIX: ${REDPANDA_TOPIC_PREFIX:-orderbook}
+
 volumes:
   flink_checkpoints:
+  redpanda_data:
+    driver: local

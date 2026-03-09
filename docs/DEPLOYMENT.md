@@ -25,15 +25,15 @@ flowchart LR
 
 ## What Runs Where
 
-| Component                              | Location/Provider          |
-| -------------------------------------- | -------------------------- |
-| Ingestion                              | OCI VM (`compose.oci.yml`) |
-| Consumers                              | OCI VM (`compose.oci.yml`) |
-| Flink JobManager/TaskManager/Submitter | OCI VM (`compose.oci.yml`) |
-| SQL database                           | CockroachDB                |
-| Redis cache                            | Redis Cloud                |
-| Kafka broker                           | Redpanda Serverless        |
-| Dashboard                              | Streamlit Community Cloud  |
+| Component                              | Location/Provider            |
+| -------------------------------------- | ---------------------------- |
+| Ingestion                              | OCI VM (`compose.oci.yml`)   |
+| Consumers                              | OCI VM (`compose.oci.yml`)   |
+| Flink JobManager/TaskManager/Submitter | OCI VM (`compose.oci.yml`)   |
+| SQL database                           | CockroachDB                  |
+| Redis cache                            | Redis Cloud                  |
+| Kafka broker                           | ~~Redpanda Serverless~~ (VM) |
+| Dashboard                              | Streamlit Community Cloud    |
 
 ## Prerequisites
 
@@ -71,7 +71,7 @@ flowchart LR
 > **Note:** Upstash Redis monthly bandwidth limit is 50GB/mo.
 > **Note:** RedisCloud monthly bandwidth limit is 30GB/mo.
 
-3. Redpanda Serverless
+3. ~~Redpanda Serverless~~ (moved to OCI VM to avoid $)
    - Create resource group + serverless cluster.
    - Create Kafka user/password.
    - Create topics:

@@ -36,6 +36,31 @@ resource "oci_core_route_table" "public" {
   }
 }
 
+# Streamlit Community Cloud egress IPs - may change without notice.
+# Source: https://docs.streamlit.io/deploy/streamlit-community-cloud/status
+locals {
+  streamlit_egress_cidrs = toset([
+    "35.230.127.150/32",
+    "35.203.151.101/32",
+    "34.19.100.134/32",
+    "34.83.176.217/32",
+    "35.230.58.211/32",
+    "35.203.187.165/32",
+    "35.185.209.55/32",
+    "34.127.88.74/32",
+    "34.127.0.121/32",
+    "35.230.78.192/32",
+    "35.247.110.67/32",
+    "35.197.92.111/32",
+    "34.168.247.159/32",
+    "35.230.56.30/32",
+    "34.127.33.101/32",
+    "35.227.190.87/32",
+    "35.199.156.97/32",
+    "34.82.135.155/32",
+  ])
+}
+
 resource "oci_core_security_list" "public" {
   compartment_id = var.compartment_ocid
   vcn_id         = oci_core_vcn.main.id
@@ -62,6 +87,16 @@ resource "oci_core_security_list" "public" {
     }
   }
 
+  # redpanda console
+  ingress_security_rules {
+    protocol = "6"
+    source   = var.admin_cidr   # your IP only
+    tcp_options {
+      min = 8080
+      max = 8080
+    }
+  }
+
   # Flink REST API (port 8081) - for Streamlit Cloud health checks
   ingress_security_rules {
     protocol = "6"
@@ -69,6 +104,32 @@ resource "oci_core_security_list" "public" {
     tcp_options {
       min = 8081
       max = 8081
+    }
+  }
+
+  # Redpanda Kafka API (9092) - Streamlit Community Cloud egress IPs only
+  dynamic "ingress_security_rules" {
+    for_each = local.streamlit_egress_cidrs
+    content {
+      protocol = "6"
+      source   = ingress_security_rules.value
+      tcp_options {
+        min = 9092
+        max = 9092
+      }
+    }
+  }
+
+  # Redpanda Admin API (9644) - Streamlit Community Cloud egress IPs only
+  dynamic "ingress_security_rules" {
+    for_each = local.streamlit_egress_cidrs
+    content {
+      protocol = "6"
+      source   = ingress_security_rules.value
+      tcp_options {
+        min = 9644
+        max = 9644
+      }
     }
   }
 
