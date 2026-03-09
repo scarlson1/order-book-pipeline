@@ -17,6 +17,9 @@ jobs:
       REDIS_PORT: 6379
       REDIS_SSL: false
       REDPANDA_TOPIC_PREFIX: orderbook
+      REDPANDA_SERVICE: redpanda
+      REDPANDA_BOOTSTRAP_PORT: 9092
+      REDPANDA_ADMIN_URL: http://localhost:9644
       FLINK_HOST: localhost
       FLINK_PARALLELISM: 1
       BINANCE_WS_URL: wss://stream.binance.com:9443/ws
