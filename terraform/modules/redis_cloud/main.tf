@@ -7,20 +7,26 @@ terraform {
 }
 
 # If using the free/Essentials tier, use this resource instead:
-# resource "rediscloud_essentials_subscription" "this" { ... }
-
-resource "rediscloud_subscription_database" "this" {
-  subscription_id      = rediscloud_subscription.this.id
-  name                 = var.database_name
-  protocol             = "redis"
-  memory_limit_in_gb   = var.memory_limit_mb / 1024
+resource "rediscloud_essentials_database" "this" {
+  subscription_id = var.subscription_id
+  name            = var.database_name
+  password        = var.password
   data_persistence     = "none"
-  password             = var.password
   replication          = false
-
-  throughput_measurement_by    = "operations-per-second"
-  throughput_measurement_value = 1000
 }
+
+# resource "rediscloud_subscription_database" "this" {
+#   subscription_id      = var.subscription_id # rediscloud_subscription.this.id
+#   name                 = var.database_name
+#   protocol             = "redis"
+#   memory_limit_in_gb   = var.memory_limit_mb / 1024
+#   data_persistence     = "none"
+#   password             = var.password
+#   replication          = false
+
+#   throughput_measurement_by    = "operations-per-second"
+#   throughput_measurement_value = 1000
+# }
 
 # # Look up available cloud regions
 # data "rediscloud_payment_method" "card" {

@@ -1,6 +1,6 @@
 variable "subscription_name" {
   type    = string
-  default = "orderbook-sub"
+  default = "orderbook-pipeline"
 }
 
 variable "database_name" {
@@ -32,4 +32,10 @@ variable "password" {
 variable "tls" {
   type    = bool
   default = true
+}
+
+variable "subscription_id" {
+  type        = string
+  description = "Existing Redis Cloud subscription ID"
+  default     = "3148705"
 }
