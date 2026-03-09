@@ -148,7 +148,7 @@ services:
       - --node-id=0
       - --kafka-addr=PLAINTEXT://0.0.0.0:9092
       # - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
-      - --advertise-kafka-addr=PLAINTEXT://163.192.103.204:9092
+      - --advertise-kafka-addr=PLAINTEXT://${OCI_VM_PUBLIC_IP}:9092
       - --pandaproxy-addr=0.0.0.0:8082
       - --advertise-pandaproxy-addr=redpanda:8082
       - --schema-registry-addr=0.0.0.0:8081
