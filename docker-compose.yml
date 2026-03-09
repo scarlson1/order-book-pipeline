@@ -166,7 +166,7 @@ services:
 
   # Redpanda Console (optional - Web UI for Redpanda)
   redpanda-console:
-    image: docker.redpanda.com/redpandadata/console:v2.4.3
+    image: redpandadata/console:latest
     container_name: orderbook_redpanda_console
     depends_on:
       - redpanda

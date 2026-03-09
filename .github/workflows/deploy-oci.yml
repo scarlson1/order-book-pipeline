@@ -33,12 +33,14 @@ jobs:
           REDIS_URL: ${{ secrets.REDIS_URL }}
           REDPANDA_BOOTSTRAP_SERVERS: ${{ secrets.REDPANDA_BOOTSTRAP_SERVERS }}
           REDPANDA_SERVICE: ${{ secrets.REDPANDA_SERVICE }}
+          REDPANDA_ADMIN_URL: ${{ vars.REDPANDA_ADMIN_URL || secrets.REDPANDA_ADMIN_URL }}
           REDPANDA_TOPIC_PREFIX: ${{ vars.REDPANDA_TOPIC_PREFIX || secrets.REDPANDA_TOPIC_PREFIX }}
           REDPANDA_SECURITY_PROTOCOL: ${{ vars.REDPANDA_SECURITY_PROTOCOL || secrets.REDPANDA_SECURITY_PROTOCOL }}
           REDPANDA_SASL_MECHANISM: ${{ vars.REDPANDA_SASL_MECHANISM || secrets.REDPANDA_SASL_MECHANISM }}
           REDPANDA_USERNAME: ${{ vars.REDPANDA_USERNAME || secrets.REDPANDA_USERNAME }}
           REDPANDA_PASSWORD: ${{ secrets.REDPANDA_PASSWORD }}
           REDPANDA_SSL_CHECK_HOSTNAME: ${{ vars.REDPANDA_SSL_CHECK_HOSTNAME || secrets.REDPANDA_SSL_CHECK_HOSTNAME }}
+          REDPANDA_BOOTSTRAP_PORT: ${{ vars.REDPANDA_BOOTSTRAP_PORT || secrets.REDPANDA_BOOTSTRAP_PORT }}
           REDPANDA_KAFKA_PORT: ${{ vars.REDPANDA_KAFKA_PORT || secrets.REDPANDA_KAFKA_PORT }}
           FLINK_HOST: ${{ secrets.FLINK_HOST }}
           FLINK_PARALLELISM: ${{ secrets.FLINK_PARALLELISM }}
@@ -126,6 +128,9 @@ jobs:
             EOF
 
             docker compose -f compose.oci.yml --env-file .env.oci run --rm db-migrate
+            docker compose -f compose.oci.yml --env-file .env.oci up -d redpanda
+            docker compose -f compose.oci.yml --env-file .env.oci run --rm redpanda-init
+            docker compose -f compose.oci.yml --env-file .env.oci up -d redpanda-console
             docker compose -f compose.oci.yml --env-file .env.oci up -d --build ingestion consumers
             docker compose -f compose.oci.yml --env-file .env.oci up -d --build --force-recreate flink-jobmanager flink-taskmanager
             docker compose -f compose.oci.yml --env-file .env.oci run --rm flink-job-submitter
