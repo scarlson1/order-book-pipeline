@@ -34,12 +34,14 @@ module "redis_cloud" {
   source = "../../modules/redis_cloud"
 
   # subscription_name = "${var.project_name}-sub"
-  database_name     = "${var.project_name}-redis"
+  database_name     = "orderbook-pipeline" # "${var.project_name}-redis"
   region            = var.redis_cloud_region
   cloud_provider    = var.redis_cloud_provider
   memory_limit_mb   = var.redis_cloud_memory_mb
   password          = var.redis_cloud_password
   tls               = true
+  subscription_id   = var.redis_cloud_subscription_id
+  subscription_name = "orderbook-pipeline" # "${var.project_name}-sub"
 }
 
 module "redpanda" {

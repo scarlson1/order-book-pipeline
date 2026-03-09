@@ -20,7 +20,12 @@ provider "rediscloud" {
   secret_key = var.redis_cloud_secret_key
 }
 
+# provider "redpanda" {
+#   client_id     = var.enable_redpanda ? var.redpanda_client_id : "disabled"
+#   client_secret = var.enable_redpanda ? var.redpanda_client_secret : "disabled"
+# }
+
 provider "redpanda" {
-  client_id     = var.enable_redpanda ? var.redpanda_client_id : "disabled"
-  client_secret = var.enable_redpanda ? var.redpanda_client_secret : "disabled"
+  client_id     = var.enable_redpanda ? var.redpanda_client_id : null
+  client_secret = var.enable_redpanda ? var.redpanda_client_secret : null
 }

@@ -24,6 +24,7 @@ redis_cloud_secret_key = "your-redis-cloud-secret-key"
 redis_cloud_region     = "us-central1"
 redis_cloud_provider   = "GCP"
 redis_cloud_password   = "your-database-password"
+redis_cloud_subscription_id = "123456"
 
 enable_redpanda            = true
 redpanda_client_id          = "..."

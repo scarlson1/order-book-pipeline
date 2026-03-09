@@ -97,6 +97,10 @@ variable "redis_cloud_password" {
   sensitive = true
 }
 
+variable "redis_cloud_subscription_id" {
+  type = string
+}
+
 # Redpanda Cloud
 variable "enable_redpanda" {
   type    = bool
