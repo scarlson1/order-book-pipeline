@@ -46,34 +46,60 @@ class RedpandaQueries:
         ]
         return any(pattern in lowered for pattern in patterns)
 
-    async def check_health(self) -> Dict:
-        """Check Redpanda cluster health.
-        
-        Returns:
-            Dict with health status and details
-        """
-        try:
-            # Use the Admin API to check cluster health
-            async with aiohttp.ClientSession() as session:
-                # Try the cluster health endpoint
-                async with session.get(f"{self._base_url}/v1/cluster/health_overview",
-                                       timeout=aiohttp.ClientTimeout(total=5)) as response:
-                    if response.status == 200:
-                        data = await response.json()
+    async def health_check(self) -> Dict:
+        """Full health check — skips Admin API for Redpanda Cloud."""
+        broker = await self.get_broker_status()
 
-                        return {
-                            'healthy': data.get('is_healthy', False),
-                            'controller_id': data.get('controller_id'),
-                            'version': data.get('cluster_version'),
-                        }
-                    else:
-                        return {'healthy': False, 'error': f"HTTP {response.status}"}
-        except asyncio.TimeoutError:
-            logger.warning("Redpanda health check timeout")
-            return {'healthy': False, 'error': 'timeout'}
-        except Exception as e:
-            logger.error(f"Redpanda health check failed: {e}")
-            return {'healthy': False, 'error': str(e)}
+        # Admin API is only available on self-hosted Redpanda, not Redpanda Cloud.
+        # For cloud deployments, broker TCP reachability is the best we can do.
+        if not self._base_url or 'redpanda.com' in self._base_url:
+            return {
+                'healthy': broker.get('connected', False),
+                'degraded': False,
+                'cluster': {'note': 'Admin API not available on Redpanda Cloud'},
+                'broker': broker,
+            }
+
+        health = await self.check_health()
+        admin_error = health.get('error', '')
+        degraded = bool(admin_error) and self._is_non_critical_admin_error(admin_error)
+
+        return {
+            'healthy': broker.get('connected', False)
+                and (health.get('healthy', False) or degraded),
+            'degraded': degraded and not health.get('healthy', False),
+            'cluster': health,
+            'broker': broker,
+        }
+
+    # async def check_health(self) -> Dict:
+    #     """Check Redpanda cluster health.
+        
+    #     Returns:
+    #         Dict with health status and details
+    #     """
+    #     try:
+    #         # Use the Admin API to check cluster health
+    #         async with aiohttp.ClientSession() as session:
+    #             # Try the cluster health endpoint
+    #             async with session.get(f"{self._base_url}/v1/cluster/health_overview",
+    #                                    timeout=aiohttp.ClientTimeout(total=5)) as response:
+    #                 if response.status == 200:
+    #                     data = await response.json()
+
+    #                     return {
+    #                         'healthy': data.get('is_healthy', False),
+    #                         'controller_id': data.get('controller_id'),
+    #                         'version': data.get('cluster_version'),
+    #                     }
+    #                 else:
+    #                     return {'healthy': False, 'error': f"HTTP {response.status}"}
+    #     except asyncio.TimeoutError:
+    #         logger.warning("Redpanda health check timeout")
+    #         return {'healthy': False, 'error': 'timeout'}
+    #     except Exception as e:
+    #         logger.error(f"Redpanda health check failed: {e}")
+    #         return {'healthy': False, 'error': str(e)}
 
     async def get_broker_status(self) -> Dict:
         """Get broker connection status.

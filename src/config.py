@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from urllib.parse import quote, urlencode
 
 from loguru import logger
@@ -58,8 +58,8 @@ class Settings(BaseSettings):
         validation_alias='REDPANDA_BOOTSTRAP_SERVERS',
     )
     # Local fallback (Docker network style: service:port)
-    redpanda_service: str = "redpanda"
-    redpanda_bootstrap_port: str = "9092"
+    redpanda_service: str # = "redpanda"
+    redpanda_bootstrap_port: str # = "9092"
     redpanda_security_protocol: str = "PLAINTEXT"
     redpanda_sasl_mechanism: str | None = None
     redpanda_username: str | None = None
@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     redpanda_ssl_keyfile: str | None = None
     redpanda_ssl_check_hostname: bool = True
     # redpanda_admin_port: int = 19644
-    redpanda_admin_url: str = 'http://redpanda:9644'
+    redpanda_admin_url: Optional[str] # = 'http://redpanda:9644'
     redpanda_kafka_port: int = 19092
     redpanda_topic_prefix: str
     
