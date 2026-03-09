@@ -377,26 +377,26 @@ class DatabaseClient:
         """
         # TODO: use sql view instead of querying
         async with self.pool.acquire() as conn:
-            # row = await conn.fetchrow(
-            #     """
-            #     SELECT time, symbol, window_type, window_start, window_end,
-            #            EXTRACT(EPOCH FROM (window_end - window_start))::INT AS window_duration_seconds,
-            #            avg_mid_price,
-            #            avg_imbalance, avg_spread_bps, avg_total_volume,
-            #            sample_count, window_velocity
-            #     FROM orderbook_metrics_windowed
-            #     WHERE symbol = $1 AND window_type = $2
-            #     ORDER BY time DESC
-            #     LIMIT 1
-            # """, symbol, window_type)
             row = await conn.fetchrow(
                 """
-                SELECT
-                    *
-                FROM latest_windowed_metrics
+                SELECT time, symbol, window_type, window_start, window_end,
+                       EXTRACT(EPOCH FROM (window_end - window_start))::INT AS window_duration_seconds,
+                       avg_mid_price,
+                       avg_imbalance, avg_spread_bps, avg_total_volume,
+                       sample_count, window_velocity
+                FROM orderbook_metrics_windowed
                 WHERE symbol = $1 AND window_type = $2
+                ORDER BY time DESC
                 LIMIT 1
             """, symbol, window_type)
+            # row = await conn.fetchrow(
+            #     """
+            #     SELECT
+            #         *
+            #     FROM latest_windowed_metrics
+            #     WHERE symbol = $1 AND window_type = $2
+            #     LIMIT 1
+            # """, symbol, window_type)
             if not row:
                 return None
             return self._normalize_windowed_row(dict(row))
