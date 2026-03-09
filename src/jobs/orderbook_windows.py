@@ -21,12 +21,12 @@ from pyflink.datastream.window import TimeWindow
 
 try:
     from src.common.utils import apply_kafka_security
-    from src.common.models import OrderBookMetrics, OrderBookWindowedMetrics
+    from src.common.models import OrderBookMetrics
     from src.config import settings
     from src.jobs.orderbook_alerts import parse_metrics
 except ModuleNotFoundError:
     from common.utils import apply_kafka_security
-    from common.models import OrderBookMetrics, OrderBookWindowedMetrics
+    from common.models import OrderBookMetrics
     from config import settings
     from jobs.orderbook_alerts import parse_metrics
 
