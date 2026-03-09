@@ -23,6 +23,9 @@ jobs:
       TF_VAR_cockroach_api_key: 'disabled'
       TF_VAR_upstash_email: 'disabled@example.com'
       TF_VAR_upstash_api_key: 'disabled'
+      TF_VAR_redis_cloud_api_key: 'disabled'
+      TF_VAR_redis_cloud_secret_key: 'disabled'
+      TF_VAR_redis_cloud_password: 'disabled'
     defaults:
       run:
         working-directory: terraform/envs/prod
