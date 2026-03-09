@@ -89,7 +89,7 @@ jobs:
 
       - name: Sync OCI Host Variable
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           set -euo pipefail
           host_ip="$(terraform output -raw oci_vm_public_ip)"
