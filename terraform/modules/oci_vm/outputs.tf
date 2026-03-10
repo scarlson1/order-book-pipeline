@@ -3,7 +3,7 @@ output "instance_id" {
 }
 
 output "instance_public_ip" {
-  value = data.oci_core_vnic.app_vm.public_ip_address
+  value = oci_core_public_ip.vm_public_ip.ip_address
 }
 
 output "vcn_id" {
