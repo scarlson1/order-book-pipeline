@@ -172,7 +172,7 @@ resource "oci_core_instance" "app_vm" {
 
   create_vnic_details {
     subnet_id        = oci_core_subnet.public.id
-    assign_public_ip = true
+    assign_public_ip = false
     hostname_label   = "orderbookvm"
   }
 
@@ -180,6 +180,11 @@ resource "oci_core_instance" "app_vm" {
     source_type             = "image"
     source_id               = data.oci_core_images.ubuntu.images[0].id
     boot_volume_size_in_gbs = var.boot_volume_gb
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [source_details]
   }
 
   metadata = {
@@ -195,4 +200,16 @@ data "oci_core_vnic_attachments" "app_vm" {
 
 data "oci_core_vnic" "app_vm" {
   vnic_id = data.oci_core_vnic_attachments.app_vm.vnic_attachments[0].vnic_id
+}
+
+# Reserved public IP - attached to VM's primary VNIC, survives VM recreation
+resource "oci_core_public_ip" "vm_public_ip" {
+  compartment_id = var.compartment_ocid
+  lifetime       = "RESERVED"
+  display_name   = "${var.project_name}-public-ip"
+  private_ip_id  = data.oci_core_vnic.app_vm.private_ip_id
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }

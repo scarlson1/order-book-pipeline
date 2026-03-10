@@ -125,7 +125,7 @@ services:
       - '18081:18081' # Schema Registry
       - '18082:18082' # Pandaproxy (REST API)
       - '19092:19092' # Kafka API
-      - '19644:9644' # Admin API
+      - '19644:9644' # Admin API (avoid conflict with VM with SSH active)
     volumes:
       - redpanda_data:/var/lib/redpanda/data
     networks:

@@ -487,9 +487,11 @@ See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for details
 
 ![alerts](docs/images/alerts.png)
 
-![imbalance trend](docs/images/imb_trend.png)
+![orderbook price action](docs/images/orderbook_price_action.png)
 
-![multi metric chart](docs/images/multi_metric_chart.png)
+![volatility chart](docs/images/volatility_chart.png)
+
+![imbalance trend](docs/images/imb_trend.png)
 
 ![infra monitor](docs/images/infra_monitor.png)
 

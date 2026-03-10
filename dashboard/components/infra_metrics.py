@@ -6,6 +6,7 @@ from streamlit_autorefresh import st_autorefresh
 
 from src.common.redpanda_client import _kafka_security_config
 from dashboard.utils.async_runner import run_async
+from loguru import logger
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -242,13 +243,11 @@ async def _get_redpanda_stats(data_layer) -> dict:
         if our_topics:
             topic_details = admin.describe_topics(our_topics)
             result["topic_details"] = {
-                t["name"]: {
+                t["topic"]: {
                     "partitions": [
                         {
                             "partition": p["partition"],
                             "leader":    p["leader"],
-                            # replicas may be list[int] or list[dict] depending
-                            # on kafka-python version — normalise to list[int]
                             "replicas": [
                                 r if isinstance(r, int) else (
                                     r.get("node_id") or r.get("nodeId") or 0
