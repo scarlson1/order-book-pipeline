@@ -1,4 +1,5 @@
 import datetime
+import json
 from typing import Optional, Dict, List
 from loguru import logger
 
@@ -66,21 +67,52 @@ class DataLayer:
                 'comparison_period': '24h'
             }
         """
+        # current metrics — Redis first (real-time, updates every second)
+        current = await self.get_latest_metrics(symbol)
+        if not current:
+            return None
+
         # Try to get pre-computed changes from Redis
         cached_changes = await self.redis.get_metric_changes(symbol)
         if cached_changes:
+            return {
+                'current': current,
+                'changes': cached_changes,
+                'comparison_period': cached_changes.get('comparison_period', 'recent')
+            }
             # Get current metrics
-            current = await self.get_latest_metrics(symbol)
-            if current:
-                return {
-                    'current': current,
-                    'changes': cached_changes,
-                    'comparison_period': cached_changes.get('comparison_period', 'recent')
-                }
+            # current = await self.get_latest_metrics(symbol)
+            # if current:
+            #     return {
+            #         'current': current,
+            #         'changes': cached_changes,
+            #         'comparison_period': cached_changes.get('comparison_period', 'recent')
+            #     }
         
         # Fallback: compute from database
         logger.info(f"Computing changes from DB for {symbol}")
-        return await self._compute_changes_from_db(symbol)
+        # return await self._compute_changes_from_db(symbol)
+
+        # DB fallback for changes only — cache the result so next call skips this
+        db_result = await self._compute_changes_from_db(symbol)
+        if db_result and db_result.get('changes'):
+            # cache computed changes for 60s so subsequent refreshes skip the DB
+            changes_to_cache = {
+                **db_result['changes'],
+                'comparison_period': db_result.get('comparison_period', '24h')
+            }
+            # TODO: move to redis client
+            key = f"orderbook:metrics:changes:{symbol}"
+            await self.redis.redis.client.setex(
+                key, 60, json.dumps(changes_to_cache, default=str)
+            )
+            return {
+                'current': current,
+                'changes': db_result.get('changes', {}),
+                'comparison_period': db_result.get('comparison_period')
+            }
+
+        return {'current': current, 'changes': {}, 'comparison_period': None}
 
     async def _compute_changes_from_db(self, symbol: str) -> Optional[Dict]:
         """Compute percentage changes by querying database.

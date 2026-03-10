@@ -441,29 +441,100 @@ class DatabaseClient:
             """)
             return [dict(row) for row in rows]
 
-    async def fetch_time_series(self, symbol: str, start_time: datetime,
-                                end_time: datetime) -> List[Dict]:
-        """Fetch time series data for a symbol.
+    async def fetch_time_series(self,
+                                symbol: str,
+                                start_time: datetime,
+                                end_time: datetime,
+                                interval: str = '1m') -> List[Dict]:
+        """Fetch time series data for charting.
         
         Args:
             symbol: Trading symbol
             start_time: Start timestamp
             end_time: End timestamp
+            interval: Aggregation interval ('1m', '5m', '1h', '1d')
             
         Returns:
-            List of metric dictionaries
+            List of time-series data points
         """
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT time, symbol, mid_price, imbalance_ratio,
-                       weighted_imbalance, spread_bps
-                FROM orderbook_metrics
-                WHERE symbol = $1 AND time BETWEEN $2 AND $3
-                ORDER BY time ASC
-            """, symbol, start_time, end_time)
+        try:
+            async with self.db.pool.acquire() as conn:
+                if interval in ('1m', '5m'):
+                    # Read from windowed table instead of raw metrics.
+                    # '5m_sliding' windows are written every 1m so resolution
+                    # is equivalent to a 1m scan of the raw table for dashboard use.
+                    rows = await conn.fetch(
+                        """
+                        SELECT
+                            window_end        AS time,
+                            symbol,
+                            avg_mid_price     AS mid_price,
+                            avg_imbalance     AS imbalance_ratio,
+                            avg_spread_bps    AS spread_bps,
+                            avg_bid_volume    AS bid_volume,
+                            avg_ask_volume    AS ask_volume,
+                            avg_total_volume  AS total_volume
+                        FROM orderbook_metrics_windowed
+                        WHERE symbol      = $1
+                            AND window_type = '5m_sliding'
+                            AND window_end  BETWEEN $2 AND $3
+                        ORDER BY window_end ASC
+                        """,
+                        symbol, start_time, end_time
+                    )
 
-            return [dict(row) for row in rows]
+                # Cockroach-compatible bucketed aggregation for larger intervals.
+                else:
+                    if interval == '1h':
+                        bucket_granularity = 'hour'
+                    elif interval == '1d':
+                        bucket_granularity = 'day'
+                    else:
+                        logger.warning(
+                            f'Unsupported interval {interval}; falling back to raw range query')
+                        rows = await conn.fetch(
+                            """
+                            SELECT
+                                time,
+                                symbol,
+                                mid_price,
+                                imbalance_ratio,
+                                spread_bps,
+                                bid_volume,
+                                ask_volume,
+                                total_volume
+                            FROM orderbook_metrics
+                            WHERE symbol = $1
+                                AND time BETWEEN $2 AND $3
+                            ORDER BY time ASC
+                        """, symbol, start_time, end_time)
+                        return [dict(row) for row in rows]
+
+                    rows = await conn.fetch(
+                        f"""
+                        SELECT
+                            date_trunc('{bucket_granularity}', time) AS time,
+                            symbol,
+                            AVG(avg_mid_price) AS mid_price,
+                            AVG(avg_imbalance) AS imbalance_ratio,
+                            AVG(avg_spread_bps) AS spread_bps,
+                            SUM(total_bid_volume) AS bid_volume,
+                            SUM(total_ask_volume) AS ask_volume,
+                            SUM(total_volume) AS total_volume
+                        FROM orderbook_metrics_windowed
+                        WHERE symbol = $1
+                            AND window_type = '1m_tumbling'
+                            AND time BETWEEN $2 AND $3
+                        GROUP BY 1, 2
+                        ORDER BY time ASC
+                    """, symbol, start_time, end_time)
+
+                return [dict(row) for row in rows]
+
+        except Exception as e:
+            logger.error(f"Error fetching time series for {symbol}: {e}")
+            return []
+
 
     async def fetch_alerts(self, symbol: Optional[str] = None, limit: int = 100) -> List[Dict]:
         """Fetch recent alerts.

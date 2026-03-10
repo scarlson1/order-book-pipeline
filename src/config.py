@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     app_name: str = "Order Book Monitor"
     environment: str # development, staging, production
 
+    # control resource usage (cockroachDB)
+    metrics_batch_max_size: int = 500
+    metrics_batch_timeout_seconds: float = 30.0
+
     # ===== Computed Properties ===== #
     
     @property

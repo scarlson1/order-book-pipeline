@@ -60,8 +60,8 @@ class DatabaseConsumer:
         # Metrics batch state
         self._metrics_batch: list[dict] = []
         self._metrics_batch_keys: set[tuple] = set()
-        self._metrics_batch_max_size = 500 # 200 -> 500 to reduce DB credit use
-        self._metrics_batch_timeout_seconds = 5.0 # 1.0 -> 5.0 to reduce DB credit use
+        self._metrics_batch_max_size = settings.metrics_batch_max_size # 500 # 200 -> 500 to reduce DB credit use
+        self._metrics_batch_timeout_seconds = settings.metrics_batch_timeout_seconds # 30.0 # 1.0 -> 30.0 to reduce DB credit use
         self._metrics_last_flush_time = datetime.datetime.now(datetime.timezone.utc)
 
         # Windowed batch state (separate batch for windowed data)
