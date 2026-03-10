@@ -57,7 +57,7 @@ class Settings(BaseSettings):
         default=None,
         validation_alias='REDPANDA_BOOTSTRAP_SERVERS',
     )
-    # Local fallback (Docker network style: service:port)
+    # Local fallback (Docker network style:  service:port)
     redpanda_service: str = "redpanda"
     redpanda_bootstrap_port: str = "9092"
     redpanda_security_protocol: str = "PLAINTEXT"
