@@ -268,7 +268,7 @@ def render_alert_heatmap(
 
     # ── heatmap ───────────────────────────────────────────────────────
     fig = _build_figure(pivot, symbol, window_key)
-    st.plotly_chart(fig, use_container_width=True, config={"displaylogo": False})
+    st.plotly_chart(fig, width='stretch', config={"displaylogo": False})
 
     # ── raw counts table (collapsed) ──────────────────────────────────
     with st.expander("Raw counts", expanded=False):
@@ -287,5 +287,5 @@ def render_alert_heatmap(
 
         st.dataframe(
             pivot.style.map(_color_cell),
-            use_container_width=True,
+            width='stretch',
         )

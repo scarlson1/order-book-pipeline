@@ -107,6 +107,26 @@ resource "oci_core_security_list" "public" {
     }
   }
 
+  # Redpanda Admin API (9644) - open to all (Streamlit no longer publishes egress IPs)
+  ingress_security_rules {
+    protocol = "6"
+    source   = "0.0.0.0/0"
+    tcp_options {
+      min = 9644
+      max = 9644
+    }
+  }
+
+  # Redpanda API (9093) - open to all (Streamlit no longer publishes egress IPs)
+  ingress_security_rules {
+    protocol = "6"
+    source   = "0.0.0.0/0"
+    tcp_options {
+      min = 9093
+      max = 9093
+    }
+  }
+
   # Redpanda Kafka API (9092) - Streamlit Community Cloud egress IPs only
   dynamic "ingress_security_rules" {
     for_each = local.streamlit_egress_cidrs
@@ -114,8 +134,8 @@ resource "oci_core_security_list" "public" {
       protocol = "6"
       source   = ingress_security_rules.value
       tcp_options {
-        min = 9092
-        max = 9092
+        min = 9093
+        max = 9093
       }
     }
   }

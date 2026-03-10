@@ -355,7 +355,7 @@ def render_depth_heatmap(
     # ── build & render figure ─────────────────────────────────────────
     fig = _build_figure(df, heatmap, price_arr, symbol, timezone_pref)
 
-    st.plotly_chart(fig, use_container_width=True, config={"displaylogo": False})
+    st.plotly_chart(fig, width='stretch', config={"displaylogo": False})
     st.caption(
         "⚠️ Depth heatmap is **approximated** from 5m sliding window aggregates "
         "(avg_mid_price, avg_imbalance, avg_bid/ask_volume, spread). "
