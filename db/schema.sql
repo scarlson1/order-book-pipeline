@@ -49,6 +49,12 @@ CREATE INDEX IF NOT EXISTS idx_alerts_time ON orderbook_alerts (time DESC);
 CREATE INDEX IF NOT EXISTS idx_alerts_symbol_time ON orderbook_alerts (symbol, time DESC);
 CREATE INDEX IF NOT EXISTS idx_alerts_type ON orderbook_alerts (alert_type, time DESC);
 
+ALTER TABLE orderbook_alerts
+SET (
+  ttl_expiration_expression = 'time + INTERVAL ''7 days''',
+  ttl_job_cron = '@hourly'
+);
+
 
 CREATE TABLE IF NOT EXISTS orderbook_metrics_windowed (
   time TIMESTAMPTZ NOT NULL,
