@@ -173,7 +173,7 @@ async def test_fetch_time_series(connected_db, sample_metrics):
     await connected_db.insert_metrics(sample_metrics)
     start = (sample_metrics["timestamp"] - timedelta(seconds=60)).replace(tzinfo=timezone.utc)
     end = (sample_metrics["timestamp"] + timedelta(seconds=60)).replace(tzinfo=timezone.utc)
-    rows = await connected_db.fetch_time_series(sample_metrics["symbol"], start, end)
+    rows = await connected_db.fetch_time_series(sample_metrics["symbol"], start, end, interval='1h')
     assert len(rows) >= 1
     assert rows[0]["symbol"] == sample_metrics["symbol"]
 
