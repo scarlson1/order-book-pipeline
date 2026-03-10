@@ -26,10 +26,10 @@ CREATE INDEX IF NOT EXISTS idx_orderbook_imbalance ON orderbook_metrics (symbol,
 
 ALTER TABLE orderbook_metrics
 SET (
-  ttl_expiration_expression = 'time + INTERVAL ''7 days''',
+  -- ttl_expiration_expression = 'time + INTERVAL ''7 days''',
+  ttl_expiration_expression = 'time + INTERVAL ''24 hours''',
   ttl_job_cron = '@hourly'
 );
-
 
 CREATE TABLE IF NOT EXISTS orderbook_alerts (
   id INT8 PRIMARY KEY DEFAULT unique_rowid(),

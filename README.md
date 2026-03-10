@@ -214,6 +214,8 @@ UPDATE_SPEED=1000ms
 ├─ 10GB limit: 77 days ✓
 └─ Trade-off: 10x slower updates
 
+> Note: `db_consumer.py` config was updated to write to the DB when batch size reaches 500 or 30 seconds. This was increase from 200 and 1s to reduce CockroachDB credit consumption in portfolio project setting. Configurable with env vars.
+
 <!-- Downsampling Only (60s bucket)
 ├─ Metrics/day: 4,320 (1 per symbol per 60s)
 ├─ Daily storage: 8.6 MB

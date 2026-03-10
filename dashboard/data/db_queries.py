@@ -1,6 +1,6 @@
 """Database query functions."""
 
-import datetime
+from datetime import datetime
 import streamlit as st
 from loguru import logger
 from typing import Dict, List, Optional
@@ -52,7 +52,7 @@ class DatabaseQueries:
 
         window_start = normalized.get('window_start')
         window_end = normalized.get('window_end')
-        if isinstance(window_start, datetime.datetime) and isinstance(window_end, datetime.datetime):
+        if isinstance(window_start, datetime) and isinstance(window_end, datetime):
             computed_duration = int((window_end - window_start).total_seconds())
             if computed_duration > 0:
                 normalized['window_duration_seconds'] = computed_duration
@@ -64,13 +64,29 @@ class DatabaseQueries:
     async def fetch_latest_metrics(self, symbol: str) -> Optional[Dict]:
         """Fetch the most recent metrics for a symbol."""
         try:
-            results = await self.db.fetch_recent_metrics(symbol, limit=1)
-            # logger.info(f"Results count: {len(results) if results else 0}")
-            # if results:
-            #     logger.info(f"First result keys: {results[0].keys()}")
-            #     logger.info(f"First result: {results[0]}")
-
-            return results[0] if results else None
+            # results = await self.db.fetch_recent_metrics(symbol, limit=1)
+            # return results[0] if results else None
+            async with self.db.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT
+                        window_end        AS time,
+                        symbol,
+                        avg_mid_price     AS mid_price,
+                        avg_imbalance     AS imbalance_ratio,
+                        avg_spread_bps    AS spread_bps,
+                        avg_bid_volume    AS bid_volume,
+                        avg_ask_volume    AS ask_volume,
+                        avg_total_volume  AS total_volume
+                    FROM orderbook_metrics_windowed
+                    WHERE symbol      = $1
+                    AND window_type = '5m_sliding'
+                    ORDER BY window_end DESC
+                    LIMIT 1
+                    """,
+                    symbol
+                )
+                return dict(row) if row else None
 
         except Exception as e:
             logger.error(f"Error fetching latest metrics for {symbol}: {e}")
@@ -89,47 +105,10 @@ class DatabaseQueries:
             logger.error(f"Error fetching multiple symbols: {e}")
             return []
 
-    # async def fetch_metrics(self, symbol: str = None) -> dict:
-    #     """Try Redis, fallback on TimescaleDB"""
-
-    #     if symbol:
-    #         # cached = await self.redis.get_cached_metrics(symbol)
-    #         # if cached:
-    #         #     return json.loads(cached)
-
-    #         metrics = await self.db.fetch_recent_metrics(symbol, limit=1)
-
-    #         if metrics:
-    #             await self.redis.insert_metrics(symbol, metrics, ttl=60)
-
-    #         return metrics
-
-    #     # get all symbols
-    #     else:
-    #         async with self.db.pool.acquire() as conn:
-
-    #             metrics = await conn.fetch("""
-    #                 SELECT DISTINCT ON (symbol)
-    #                     *
-    #                 FROM orderbook_metrics
-    #                 ORDER BY symbol, time DESC
-    #             """)
-
-    #         pipeline = self.redis.pipeline()
-    #         for m in metrics:
-    #             pipeline.setex(
-    #                 self.redis._metrics_key(m['symbol']),
-    #                 60,
-    #                 json.dumps(m)
-    #             )
-    #         await pipeline.execute()
-
-    #         return metrics
-
     async def fetch_time_series(self,
                                 symbol: str,
-                                start_time: datetime.datetime,
-                                end_time: datetime.datetime,
+                                start_time: datetime,
+                                end_time: datetime,
                                 interval: str = '1m') -> List[Dict]:
         """Fetch time series data for charting.
         
@@ -144,24 +123,29 @@ class DatabaseQueries:
         """
         try:
             async with self.db.pool.acquire() as conn:
-                # For small intervals, return raw data
                 if interval in ('1m', '5m'):
+                    # Read from windowed table instead of raw metrics.
+                    # '5m_sliding' windows are written every 1m so resolution
+                    # is equivalent to a 1m scan of the raw table for dashboard use.
                     rows = await conn.fetch(
                         """
                         SELECT
-                            time,
+                            window_end        AS time,
                             symbol,
-                            mid_price,
-                            imbalance_ratio,
-                            spread_bps,
-                            bid_volume,
-                            ask_volume,
-                            total_volume
-                        FROM orderbook_metrics
-                        WHERE symbol = $1
-                            AND time BETWEEN $2 AND $3
-                        ORDER BY time ASC
-                    """, symbol, start_time, end_time)
+                            avg_mid_price     AS mid_price,
+                            avg_imbalance     AS imbalance_ratio,
+                            avg_spread_bps    AS spread_bps,
+                            avg_bid_volume    AS bid_volume,
+                            avg_ask_volume    AS ask_volume,
+                            avg_total_volume  AS total_volume
+                        FROM orderbook_metrics_windowed
+                        WHERE symbol      = $1
+                            AND window_type = '5m_sliding'
+                            AND window_end  BETWEEN $2 AND $3
+                        ORDER BY window_end ASC
+                        """,
+                        symbol, start_time, end_time
+                    )
 
                 # Cockroach-compatible bucketed aggregation for larger intervals.
                 else:
@@ -220,7 +204,7 @@ class DatabaseQueries:
     async def fetch_alerts(self,
                            symbol: Optional[str] = None,
                            limit: int = 50,
-                           since: Optional[datetime.datetime] = None) -> List[Dict]:
+                           since: Optional[datetime] = None) -> List[Dict]:
         '''Fetch alerts fromm the database'''
         try:
             query = '''
@@ -358,7 +342,7 @@ class DatabaseQueries:
     # ===== Percentage Change Queries ===== #
 
     async def fetch_price_at_time(self, symbol: str,
-                                  timestamp: datetime.datetime) -> Optional[Dict]:
+                                  timestamp: datetime) -> Optional[Dict]:
         """Fetch price closest to a specific timestamp."""
         try:
             return await self.db.fetch_price_at_time(symbol, timestamp)
@@ -383,7 +367,7 @@ class DatabaseQueries:
                 return None
 
             # Get price 24h ago
-            day_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
+            day_ago = datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
             previous = await self.fetch_price_at_time(symbol, day_ago)
 
             if not previous:
