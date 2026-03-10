@@ -202,12 +202,16 @@ data "oci_core_vnic" "app_vm" {
   vnic_id = data.oci_core_vnic_attachments.app_vm.vnic_attachments[0].vnic_id
 }
 
+data "oci_core_private_ips" "app_vm" {
+  vnic_id = data.oci_core_vnic.app_vm.id
+}
+
 # Reserved public IP - attached to VM's primary VNIC, survives VM recreation
 resource "oci_core_public_ip" "vm_public_ip" {
   compartment_id = var.compartment_ocid
   lifetime       = "RESERVED"
   display_name   = "${var.project_name}-public-ip"
-  private_ip_id  = data.oci_core_vnic.app_vm.private_ip_id
+  private_ip_id  = data.oci_core_private_ips.app_vm.private_ips[0].id
 
   lifecycle {
     prevent_destroy = true
