@@ -172,28 +172,29 @@ async def test_fetch_time_series(connected_db, sample_metrics):
     """fetch_time_series returns metrics in time range."""
     # await connected_db.insert_metrics(sample_metrics)
 
-    await connected_db.execute("""
-            INSERT INTO orderbook_metrics_windowed 
-            (window_start, window_end, window_type, symbol, sample_count,
-             avg_mid_price, avg_imbalance, avg_spread_bps, avg_bid_volume, avg_ask_volume, avg_total_volume)
-            VALUES ($1, $2, '5m_sliding', $3, 1, $4, $5, $6, $7, $8, $9)
-        """,
-            sample_metrics["timestamp"],
-            sample_metrics["timestamp"],
-            sample_metrics["symbol"],
-            sample_metrics["mid_price"],
-            sample_metrics["imbalance_ratio"],
-            sample_metrics["spread_bps"],
-            sample_metrics["bid_volume"],
-            sample_metrics["ask_volume"],
-            sample_metrics["total_volume"],
-        )
+    async with connected_db.pool.acquire() as conn:
+        await connected_db.execute("""
+                INSERT INTO orderbook_metrics_windowed 
+                (window_start, window_end, window_type, symbol, sample_count,
+                avg_mid_price, avg_imbalance, avg_spread_bps, avg_bid_volume, avg_ask_volume, avg_total_volume)
+                VALUES ($1, $2, '5m_sliding', $3, 1, $4, $5, $6, $7, $8, $9)
+            """,
+                sample_metrics["timestamp"],
+                sample_metrics["timestamp"],
+                sample_metrics["symbol"],
+                sample_metrics["mid_price"],
+                sample_metrics["imbalance_ratio"],
+                sample_metrics["spread_bps"],
+                sample_metrics["bid_volume"],
+                sample_metrics["ask_volume"],
+                sample_metrics["total_volume"],
+            )
 
-    start = (sample_metrics["timestamp"] - timedelta(seconds=60)).replace(tzinfo=timezone.utc)
-    end = (sample_metrics["timestamp"] + timedelta(seconds=60)).replace(tzinfo=timezone.utc)
-    rows = await connected_db.fetch_time_series(sample_metrics["symbol"], start, end, interval='1h')
-    assert len(rows) >= 1
-    assert rows[0]["symbol"] == sample_metrics["symbol"]
+        start = (sample_metrics["timestamp"] - timedelta(seconds=60)).replace(tzinfo=timezone.utc)
+        end = (sample_metrics["timestamp"] + timedelta(seconds=60)).replace(tzinfo=timezone.utc)
+        rows = await connected_db.fetch_time_series(sample_metrics["symbol"], start, end, interval='1h')
+        assert len(rows) >= 1
+        assert rows[0]["symbol"] == sample_metrics["symbol"]
 
 
 @pytest.mark.integration
