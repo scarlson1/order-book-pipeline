@@ -35,15 +35,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+st.caption('Currently throttling data update rate to keep costs down. Using 1s websocket rate instead of 100ms. Data is batched to DB every 10 seconds instead of 1s.')
+
 """
 # :material/query_stats: Crypto Orderbook Pipeline
 
 Stream orderbook data in real-time with metric calculations & alerts.
 """
-
-# st.sidebar.title()
-# st.logo(f'🚀 Stock Pipeline')
-# st.logo(sidebar_logo, icon_image=main_body_logo) # https://docs.streamlit.io/develop/api-reference/media/st.logo
 
 symbol = st.sidebar.selectbox(
     'Symbol',
