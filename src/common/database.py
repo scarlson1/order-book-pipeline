@@ -458,7 +458,7 @@ class DatabaseClient:
             List of time-series data points
         """
         try:
-            async with self.db.pool.acquire() as conn:
+            async with self.pool.acquire() as conn:
                 if interval in ('1m', '5m'):
                     # Read from windowed table instead of raw metrics.
                     # '5m_sliding' windows are written every 1m so resolution
