@@ -12,6 +12,7 @@ on:
       - 'Dockerfile.consumers'
       - 'Dockerfile.flink'
       - '.github/workflows/deploy-oci.yml'
+      - 'requirements-flink.txt'
 
 jobs:
   deploy:
