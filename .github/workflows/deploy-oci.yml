@@ -17,8 +17,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # needed so HEAD~1 exists for the diff
+
+      # Only rebuild Flink if its dependencies changed
+      - name: Check if Flink image needs rebuild
+        run: |
+          if git diff HEAD~1 --name-only | grep -qE 'Dockerfile.flink|requirements-flink.txt'; then
+            echo "REBUILD_FLINK=true" >> $GITHUB_ENV
+          else
+            echo "REBUILD_FLINK=false" >> $GITHUB_ENV
+          fi
+
       - uses: appleboy/ssh-action@v1.2.0
         env:
+          REBUILD_FLINK: ${{ env.REBUILD_FLINK }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
           POSTGRES_PORT: ${{ vars.POSTGRES_PORT || secrets.POSTGRES_PORT }}
@@ -65,7 +79,7 @@ jobs:
           username: ${{ secrets.OCI_VM_USER }}
           key: ${{ secrets.OCI_VM_SSH_KEY }}
           command_timeout: 30m
-          envs: DATABASE_URL,POSTGRES_HOST,POSTGRES_PORT,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_SSLMODE,REDIS_HOST,REDIS_PORT,REDIS_PASSWORD,REDIS_SSL,REDIS_URL,REDPANDA_BOOTSTRAP_SERVERS,REDPANDA_ADMIN_URL,REDPANDA_SERVICE,REDPANDA_BOOTSTRAP_PORT,REDPANDA_TOPIC_PREFIX,REDPANDA_SECURITY_PROTOCOL,REDPANDA_SASL_MECHANISM,REDPANDA_USERNAME,REDPANDA_PASSWORD,REDPANDA_SSL_CHECK_HOSTNAME,REDPANDA_KAFKA_PORT,FLINK_HOST,FLINK_PARALLELISM,FLINK_PORT,BINANCE_WS_URL,SYMBOLS,DEPTH_LEVELS,UPDATE_SPEED,CALCULATE_DEPTH,ROLLING_WINDOW_SECONDS,CALCULATE_VELOCITY,ALERT_THRESHOLD_HIGH,ALERT_THRESHOLD_MEDIUM,SPREAD_ALERT_MULTIPLIER,VELOCITY_THRESHOLD,LOG_LEVEL,LOG_FILE,ENVIRONMENT,OCI_VM_PUBLIC_IP
+          envs: REBUILD_FLINK,DATABASE_URL,POSTGRES_HOST,POSTGRES_PORT,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_SSLMODE,REDIS_HOST,REDIS_PORT,REDIS_PASSWORD,REDIS_SSL,REDIS_URL,REDPANDA_BOOTSTRAP_SERVERS,REDPANDA_ADMIN_URL,REDPANDA_SERVICE,REDPANDA_BOOTSTRAP_PORT,REDPANDA_TOPIC_PREFIX,REDPANDA_SECURITY_PROTOCOL,REDPANDA_SASL_MECHANISM,REDPANDA_USERNAME,REDPANDA_PASSWORD,REDPANDA_SSL_CHECK_HOSTNAME,REDPANDA_KAFKA_PORT,FLINK_HOST,FLINK_PARALLELISM,FLINK_PORT,BINANCE_WS_URL,SYMBOLS,DEPTH_LEVELS,UPDATE_SPEED,CALCULATE_DEPTH,ROLLING_WINDOW_SECONDS,CALCULATE_VELOCITY,ALERT_THRESHOLD_HIGH,ALERT_THRESHOLD_MEDIUM,SPREAD_ALERT_MULTIPLIER,VELOCITY_THRESHOLD,LOG_LEVEL,LOG_FILE,ENVIRONMENT,OCI_VM_PUBLIC_IP
           script: |
             set -e
             git config --global --add safe.directory /opt/order-book-pipeline
@@ -136,6 +150,15 @@ jobs:
             docker compose -f compose.oci.yml --env-file .env.oci run --rm redpanda-init
             docker compose -f compose.oci.yml --env-file .env.oci up -d redpanda-console
             docker compose -f compose.oci.yml --env-file .env.oci up -d --build ingestion consumers
-            docker compose -f compose.oci.yml --env-file .env.oci up -d --build --force-recreate flink-jobmanager flink-taskmanager
+
+            if [ "${REBUILD_FLINK}" = "true" ]; then
+              echo "Flink dependencies changed — rebuilding image (this will take ~10 min)..."
+              docker compose -f compose.oci.yml --env-file .env.oci build flink-jobmanager
+              docker compose -f compose.oci.yml --env-file .env.oci up -d --force-recreate flink-jobmanager flink-taskmanager
+            else
+              echo "No Flink changes — restarting with existing image..."
+              docker compose -f compose.oci.yml --env-file .env.oci up -d flink-jobmanager flink-taskmanager
+            fi
+
             docker compose -f compose.oci.yml --env-file .env.oci run --rm flink-job-submitter
             docker image prune -f
