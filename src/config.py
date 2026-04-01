@@ -1,10 +1,9 @@
-from typing import List, Optional
+from typing import List
 from urllib.parse import quote, urlencode
 
 from loguru import logger
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-# from pydantic import SecretStr
 
 class Settings(BaseSettings):
     # https://docs.pydantic.dev/latest/concepts/pydantic_settings/#dotenv-env-support
