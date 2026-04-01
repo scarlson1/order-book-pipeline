@@ -4,7 +4,7 @@ variable "cluster_name" {
 
 variable "cloud_provider" {
   type    = string
-  default = "AWS"
+  default = "GCP"
 }
 
 variable "region" {
