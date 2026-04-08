@@ -495,7 +495,13 @@ See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for details
 
 ![imbalance trend](docs/images/imb_trend.png)
 
-![infra monitor](docs/images/infra_monitor.png)
+![infra monitor redis](docs/images/infra_monitor_redis.png)
+
+![infra monitor db](docs/images/infra_monitor_db.png)
+
+![infra monitor flink](docs/images/infra_monitor_flink.png)
+
+![infra monitor redpanda](docs/images/infra_monitor_redpanda.png)
 
 ## Potential Features Roadmap
 
