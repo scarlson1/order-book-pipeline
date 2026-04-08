@@ -491,7 +491,7 @@ See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for details
 
 ![orderbook price action](docs/images/orderbook_price_action.png)
 
-![volatility chart](docs/images/volatility_chart.png)
+![volatility chart](docs/images/vol_chart.png)
 
 ![imbalance trend](docs/images/imb_trend.png)
 
