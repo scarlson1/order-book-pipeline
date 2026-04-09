@@ -173,7 +173,7 @@ async def test_fetch_time_series(connected_db, sample_metrics):
     # await connected_db.insert_metrics(sample_metrics)
 
     async with connected_db.pool.acquire() as conn:
-        await connected_db.execute("""
+        await conn.execute("""
                 INSERT INTO orderbook_metrics_windowed 
                 (window_start, window_end, window_type, symbol, sample_count,
                 avg_mid_price, avg_imbalance, avg_spread_bps, avg_bid_volume, avg_ask_volume, avg_total_volume)
